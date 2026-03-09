@@ -113,9 +113,26 @@ with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
         f.write(wav)
 ```
 
-### After (murmr with Saved Voice)
+### After (murmr with Saved Voice -- Streaming)
 
-For a workflow closer to OpenAI's fixed voice model, save a voice once and reuse it by ID. The `/v1/audio/speech` endpoint accepts saved voice IDs and supports all audio formats:
+For real-time playback, use the streaming endpoint. It delivers first audio in ~450ms:
+
+**curl**
+```bash
+curl -X POST "https://api.murmr.dev/v1/audio/speech/stream" \
+  -H "Authorization: Bearer $MURMR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Hello world",
+    "voice": "voice_abc123",
+    "language": "English"
+  }'
+# → SSE stream with base64 PCM chunks (~450ms to first audio)
+```
+
+### After (murmr with Saved Voice -- Batch)
+
+For bulk generation and file exports, use the batch endpoint. It accepts saved voice IDs and supports all audio formats:
 
 **curl**
 ```bash
@@ -229,7 +246,7 @@ def generate_speech(text: str, voice: str = "alloy", fmt: str = "mp3") -> bytes:
 | Feature | OpenAI TTS | murmr |
 |---------|-----------|-------|
 | Voice selection | 6 fixed voices by name | Unlimited custom voices via description or saved IDs |
-| Batch response | 200 with audio bytes | 202 async with job ID (poll or webhook) |
+| Batch response | 200 with audio bytes | 202 async with job ID (poll or webhook). For low-latency use cases, use `/v1/audio/speech/stream` instead (~450ms TTFC) |
 | Streaming | Proprietary chunked response | Standard SSE (`text/event-stream`) |
 | Audio formats | mp3, opus, aac, flac, wav, pcm | mp3, opus, aac, flac, wav, pcm |
 | WebSocket realtime | Yes (separate API) | Yes (`/v1/realtime`) |

@@ -28,6 +28,8 @@ Generate speech from text using a saved voice. murmr provides two speech endpoin
 
 > Streaming always returns raw PCM audio (24kHz, 16-bit, mono). The `response_format` parameter is not supported for streaming.
 
+> **Building a real-time app?** The batch endpoint is optimized for bulk generation and file exports, not low-latency playback. If you need audio as fast as possible (voice agents, live previews, interactive apps), use `/v1/audio/speech/stream` instead -- it delivers first audio in ~450ms. See [SSE Streaming](./streaming.md).
+
 ## Batch Generation
 
 The batch endpoint (`POST /v1/audio/speech`) returns HTTP 200 with binary audio by default. If you provide a `webhook_url`, it returns HTTP 202 with a job ID instead -- see [Async Jobs](./async-jobs.md) for polling and webhook details.
