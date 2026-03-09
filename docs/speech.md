@@ -63,92 +63,83 @@ curl "https://api.murmr.dev/v1/jobs/job_a1b2c3d4e5f6g7h8" \
   --output episode2.mp3
 ```
 
-**Python**
+**Node.js SDK**
 
-```python
-import time
-import requests
+```typescript
+import { MurmrClient, isSyncResponse } from '@murmr/sdk';
+import { writeFileSync } from 'node:fs';
 
-# Submit batch job
-response = requests.post(
-    "https://api.murmr.dev/v1/audio/speech",
-    headers={"Authorization": "Bearer YOUR_API_KEY"},
-    json={
-        "text": "Welcome back to episode 2 of our podcast.",
-        "voice": "voice_abc123",
-        "response_format": "mp3"
-    }
-)
-
-job = response.json()
-job_id = job["id"]
-print(f"Submitted: {job_id}")
-
-# Poll until complete
-while True:
-    status = requests.get(
-        f"https://api.murmr.dev/v1/jobs/{job_id}",
-        headers={"Authorization": "Bearer YOUR_API_KEY"}
-    )
-
-    # Completed: returns binary audio
-    if status.headers.get("Content-Type", "").startswith("audio/"):
-        with open("episode2.mp3", "wb") as f:
-            f.write(status.content)
-        print("Audio saved!")
-        break
-
-    # Still in progress or failed
-    data = status.json()
-    if data["status"] == "failed":
-        print(f"Failed: {data.get('error')}")
-        break
-
-    print(f"Status: {data['status']}...")
-    time.sleep(3)
-```
-
-**JavaScript**
-
-```javascript
-// Submit batch job
-const submitResp = await fetch("https://api.murmr.dev/v1/audio/speech", {
-  method: "POST",
-  headers: {
-    "Authorization": "Bearer YOUR_API_KEY",
-    "Content-Type": "application/json"
-  },
-  body: JSON.stringify({
-    text: "Welcome back to episode 2 of our podcast.",
-    voice: "voice_abc123",
-    response_format: "mp3"
-  })
+const client = new MurmrClient({
+  apiKey: process.env.MURMR_API_KEY!,
 });
-const job = await submitResp.json();
 
-// Poll until complete
-async function pollJob(jobId) {
-  while (true) {
-    const resp = await fetch(`https://api.murmr.dev/v1/jobs/${jobId}`, {
-      headers: { "Authorization": "Bearer YOUR_API_KEY" }
-    });
+// Option 1: Sync — returns audio directly (default)
+const result = await client.speech.create({
+  input: 'Welcome back to episode 2 of our podcast.',
+  voice: 'voice_abc123',
+  response_format: 'mp3',
+});
 
-    // Completed: returns binary audio
-    const ct = resp.headers.get("Content-Type") || "";
-    if (ct.startsWith("audio/")) {
-      return await resp.blob();
-    }
-
-    const data = await resp.json();
-    if (data.status === "failed") throw new Error(data.error);
-
-    await new Promise(r => setTimeout(r, 3000));
-  }
+if (isSyncResponse(result)) {
+  const buffer = Buffer.from(await result.arrayBuffer());
+  writeFileSync('output.mp3', buffer);
 }
 
-const audioBlob = await pollJob(job.id);
-const audio = new Audio(URL.createObjectURL(audioBlob));
-audio.play();
+// Option 2: Poll until done (convenience wrapper)
+const waited = await client.speech.createAndWait({
+  input: 'Wait for the audio to be ready.',
+  voice: 'voice_abc123',
+  response_format: 'wav',
+  onPoll: (status) => console.log(`Status: ${status.status}`),
+});
+
+// Option 3: Async with webhook
+const asyncResult = await client.speech.create({
+  input: 'This will be processed asynchronously.',
+  voice: 'voice_abc123',
+  webhook_url: 'https://yourapp.com/webhooks/tts',
+});
+```
+
+**Python SDK**
+
+```python
+import os
+from murmr import MurmrClient
+
+with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
+    result = client.speech.create_and_wait(
+        input="Welcome back to episode 2 of our podcast.",
+        voice="voice_abc123",
+        language="English",
+        response_format="mp3",
+    )
+
+    with open("episode2.mp3", "wb") as f:
+        f.write(result.audio)
+
+    print(f"Duration: {result.duration_ms}ms")
+```
+
+**Python (async)**
+
+```python
+import asyncio
+import os
+from murmr import AsyncMurmrClient
+
+async def main():
+    async with AsyncMurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
+        result = await client.speech.create(
+            input="Welcome back to episode 2 of our podcast.",
+            voice="voice_abc123",
+            response_format="wav",
+        )
+
+        with open("episode2.wav", "wb") as f:
+            f.write(result.audio)
+
+asyncio.run(main())
 ```
 
 ## Streaming Example
@@ -167,42 +158,53 @@ curl -X POST "https://api.murmr.dev/v1/audio/speech/stream" \
   }'
 ```
 
-**JavaScript**
+**Node.js SDK**
 
-```javascript
-const response = await fetch("https://api.murmr.dev/v1/audio/speech/stream", {
-  method: "POST",
-  headers: {
-    "Authorization": "Bearer YOUR_API_KEY",
-    "Content-Type": "application/json"
-  },
-  body: JSON.stringify({
-    text: "Hello, this is streaming audio.",
-    voice: "voice_abc123"
-  })
+```typescript
+import { MurmrClient } from '@murmr/sdk';
+
+const client = new MurmrClient({
+  apiKey: process.env.MURMR_API_KEY!,
 });
 
-const reader = response.body.getReader();
-const decoder = new TextDecoder();
+const stream = await client.speech.stream({
+  input: 'Hello, this is streaming audio.',
+  voice: 'voice_abc123',
+});
 
-while (true) {
-  const { done, value } = await reader.read();
-  if (done) break;
-
-  const chunk = decoder.decode(value);
-  for (const line of chunk.split("\n")) {
-    if (line.startsWith("data: ")) {
-      const data = JSON.parse(line.slice(6));
-      if (data.chunk) {
-        // base64 PCM int16 at 24kHz mono
-        console.log(`Chunk ${data.chunk_index}`);
-      }
-      if (data.done) {
-        console.log(`Complete: ${data.total_chunks} chunks`);
-      }
-    }
+for await (const chunk of stream) {
+  const audioData = chunk.audio || chunk.chunk;
+  if (audioData) {
+    const pcm = Buffer.from(audioData, 'base64');
+    // Send to audio player, write to file, etc.
+  }
+  if (chunk.done) {
+    console.log(`Done in ${chunk.total_time_ms}ms`);
   }
 }
+```
+
+**Python SDK**
+
+```python
+import os
+from murmr import MurmrClient
+
+with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
+    with client.speech.stream(
+        input="Hello, this is streaming audio.",
+        voice="voice_abc123",
+        language="English",
+    ) as stream:
+        pcm_chunks = []
+        for chunk in stream:
+            pcm_chunks.append(chunk.audio_bytes)
+
+            if chunk.first_chunk_latency_ms is not None:
+                print(f"TTFC: {chunk.first_chunk_latency_ms:.0f}ms")
+
+            if chunk.done:
+                print(f"Total time: {chunk.total_time_ms:.0f}ms")
 ```
 
 See [SSE Streaming](./streaming.md) for complete integration guide with Web Audio API playback.

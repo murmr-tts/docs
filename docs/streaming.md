@@ -225,127 +225,121 @@ streamSavedVoice('Hello, world!', 'voice_abc123');
 
 ## Node.js & Python
 
-**Node.js**
+The SDKs handle SSE parsing, chunk collection, and WAV header generation automatically.
 
-```javascript
-import fs from 'fs';
+**Node.js SDK**
 
-async function streamToFile(text, voiceDescription) {
-  const response = await fetch('https://api.murmr.dev/v1/voices/design', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.MURMR_API_KEY}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      text,
-      voice_description: voiceDescription,
-      language: 'English'
-    })
-  });
+```typescript
+import { MurmrClient } from '@murmr/sdk';
+import { writeFileSync } from 'node:fs';
 
-  const chunks = [];
+const client = new MurmrClient({
+  apiKey: process.env.MURMR_API_KEY!,
+});
 
-  for await (const line of response.body.pipeThrough(new TextDecoderStream()).pipeThrough(
-    new TransformStream({
-      transform(chunk, controller) {
-        for (const line of chunk.split('\n')) {
-          if (line.startsWith('data: ')) controller.enqueue(line.slice(6));
-        }
-      }
-    })
-  )) {
-    const data = JSON.parse(line);
-    if (data.chunk) chunks.push(Buffer.from(data.chunk, 'base64'));
-    if (data.done) console.log(`TTFC: ${data.first_chunk_latency_ms}ms`);
+// VoiceDesign streaming
+const stream = await client.voices.designStream({
+  input: 'Collect the full stream into a WAV file.',
+  voice_description: 'A professional female narrator',
+});
+
+const pcmChunks: Buffer[] = [];
+
+for await (const chunk of stream) {
+  const audioData = chunk.audio || chunk.chunk;
+  if (audioData) {
+    pcmChunks.push(Buffer.from(audioData, 'base64'));
   }
-
-  // Write WAV file
-  const pcm = Buffer.concat(chunks);
-  const wavHeader = createWavHeader(pcm.length, 24000, 1, 16);
-  fs.writeFileSync('output.wav', Buffer.concat([wavHeader, pcm]));
+  if (chunk.first_chunk_latency_ms) {
+    console.log(`TTFC: ${chunk.first_chunk_latency_ms}ms`);
+  }
 }
 
-function createWavHeader(dataSize, sampleRate, channels, bitsPerSample) {
-  const header = Buffer.alloc(44);
-  const byteRate = sampleRate * channels * (bitsPerSample / 8);
-  const blockAlign = channels * (bitsPerSample / 8);
+// Build WAV using SDK utility
+import { createWavHeader } from '@murmr/sdk';
 
-  header.write('RIFF', 0);
-  header.writeUInt32LE(36 + dataSize, 4);
-  header.write('WAVE', 8);
-  header.write('fmt ', 12);
-  header.writeUInt32LE(16, 16);
-  header.writeUInt16LE(1, 20);
-  header.writeUInt16LE(channels, 22);
-  header.writeUInt32LE(sampleRate, 24);
-  header.writeUInt32LE(byteRate, 28);
-  header.writeUInt16LE(blockAlign, 32);
-  header.writeUInt16LE(bitsPerSample, 34);
-  header.write('data', 36);
-  header.writeUInt32LE(dataSize, 40);
-  return header;
-}
+const pcm = Buffer.concat(pcmChunks);
+const wav = Buffer.concat([createWavHeader(pcm.length), pcm]);
+writeFileSync('output.wav', wav);
 ```
 
-**Python**
+**Python SDK**
 
 ```python
-import requests
-import base64
-import json
+import os
+from murmr import MurmrClient
+
+with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
+    # Voice Design streaming
+    with client.voices.design_stream(
+        input="Streaming delivers audio with minimal latency.",
+        voice_description="A clear, professional female narrator",
+    ) as stream:
+        pcm_parts = []
+        for chunk in stream:
+            pcm_parts.append(chunk.audio_bytes)
+
+            if chunk.first_chunk_latency_ms is not None:
+                print(f"TTFC: {chunk.first_chunk_latency_ms:.0f}ms")
+
+        pcm_audio = b"".join(pcm_parts)
+
+    # Saved voice streaming
+    with client.speech.stream(
+        input="Using a saved voice for streaming.",
+        voice="voice_abc123",
+    ) as stream:
+        for chunk in stream:
+            pcm_data = chunk.audio_bytes
+```
+
+**Python (async)**
+
+```python
+import asyncio
+import os
+from murmr import AsyncMurmrClient
+
+async def main():
+    async with AsyncMurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
+        async with client.voices.design_stream(
+            input="Async streaming for high-concurrency applications.",
+            voice_description="A warm male voice",
+        ) as stream:
+            async for chunk in stream:
+                pcm_data = chunk.audio_bytes
+
+asyncio.run(main())
+```
+
+## Saving Streamed Audio as WAV
+
+The stream produces raw PCM without a header. To save as a playable WAV file, wrap the PCM data with a WAV header:
+
+```python
 import io
 import wave
+import os
+from murmr import MurmrClient
 
-def stream_tts(text: str, voice_description: str) -> bytes:
-    """Stream VoiceDesign audio and return PCM bytes."""
-    response = requests.post(
-        "https://api.murmr.dev/v1/voices/design",
-        headers={
-            "Authorization": "Bearer YOUR_API_KEY",
-            "Content-Type": "application/json",
-        },
-        json={
-            "text": text,
-            "voice_description": voice_description,
-            "language": "English",
-        },
-        stream=True,
-    )
+with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
+    with client.voices.design_stream(
+        input="Save streamed audio as a WAV file.",
+        voice_description="A cheerful young voice",
+    ) as stream:
+        pcm_chunks = [chunk.audio_bytes for chunk in stream]
 
-    chunks = []
-    for line in response.iter_lines():
-        if not line:
-            continue
+    pcm_data = b"".join(pcm_chunks)
 
-        line = line.decode("utf-8")
-        if not line.startswith("data: "):
-            continue
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(24000)
+        wf.writeframes(pcm_data)
 
-        data = json.loads(line[6:])
-
-        if "chunk" in data:
-            chunks.append(base64.b64decode(data["chunk"]))
-            print(f"Chunk {data['chunk_index']}: {len(chunks[-1])} bytes")
-
-        if data.get("done"):
-            print(f"TTFC: {data['first_chunk_latency_ms']}ms")
-            break
-
-    return b"".join(chunks)
-
-# Save as WAV
-pcm_data = stream_tts("Hello, world!", "A warm, friendly voice")
-
-buf = io.BytesIO()
-with wave.open(buf, "wb") as wf:
-    wf.setnchannels(1)
-    wf.setsampwidth(2)  # 16-bit
-    wf.setframerate(24000)
-    wf.writeframes(pcm_data)
-
-with open("output.wav", "wb") as f:
-    f.write(buf.getvalue())
+    with open("output.wav", "wb") as f:
+        f.write(buf.getvalue())
 ```
 
 ## Batch vs Streaming
@@ -366,7 +360,34 @@ Errors during streaming are returned as SSE events. The stream closes after an e
 data: {"error": "Rate limit exceeded", "done": true}
 ```
 
-If the request fails before streaming starts (bad parameters, auth failure), you get a standard HTTP error response instead of SSE. Always check `response.ok` before reading the stream.
+Errors can occur before the stream starts (HTTP error) or mid-stream (error event). The SDK handles both:
+
+**Node.js SDK**
+
+```typescript
+import { MurmrClient, MurmrError } from '@murmr/sdk';
+
+try {
+  const stream = await client.speech.stream({
+    input: 'Handle errors gracefully.',
+    voice: 'voice_abc123',
+  });
+
+  for await (const chunk of stream) {
+    if (chunk.error) {
+      console.error(`Stream error: ${chunk.error}`);
+      break;
+    }
+    // Process audio
+  }
+} catch (error) {
+  if (error instanceof MurmrError) {
+    console.error(`API error ${error.status}: ${error.message}`);
+  }
+}
+```
+
+**Raw fetch**
 
 ```javascript
 const response = await fetch(url, options);

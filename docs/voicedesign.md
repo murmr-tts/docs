@@ -46,96 +46,113 @@ curl -X POST "https://api.murmr.dev/v1/voices/design" \
   }'
 ```
 
-**Python**
+**Node.js SDK**
 
-```python
-import requests
-import base64
-import io
-import wave
+```typescript
+import { MurmrClient } from '@murmr/sdk';
 
-response = requests.post(
-    "https://api.murmr.dev/v1/voices/design",
-    headers={
-        "Authorization": "Bearer YOUR_API_KEY",
-        "Content-Type": "application/json"
-    },
-    json={
-        "text": "Welcome to our podcast. Today we explore the future of AI.",
-        "voice_description": "A warm, professional female voice, 35 years old, calm and confident",
-        "language": "English"
-    },
-    stream=True
-)
-
-# Collect PCM chunks from SSE stream
-pcm_chunks = []
-for line in response.iter_lines():
-    if line and line.startswith(b"data: "):
-        import json
-        data = json.loads(line[6:])
-
-        if data.get("chunk"):
-            pcm_chunks.append(base64.b64decode(data["chunk"]))
-
-        if data.get("done"):
-            print(f"Complete: {data['total_chunks']} chunks, {data['total_time_ms']}ms")
-
-# Save as WAV
-all_pcm = b"".join(pcm_chunks)
-buf = io.BytesIO()
-with wave.open(buf, "wb") as wf:
-    wf.setnchannels(1)
-    wf.setsampwidth(2)
-    wf.setframerate(24000)
-    wf.writeframes(all_pcm)
-
-with open("podcast-intro.wav", "wb") as f:
-    f.write(buf.getvalue())
-print("Saved podcast-intro.wav")
-```
-
-**JavaScript**
-
-```javascript
-const response = await fetch("https://api.murmr.dev/v1/voices/design", {
-  method: "POST",
-  headers: {
-    "Authorization": "Bearer YOUR_API_KEY",
-    "Content-Type": "application/json"
-  },
-  body: JSON.stringify({
-    text: "Welcome to our podcast. Today we explore the future of AI.",
-    voice_description: "A warm, professional female voice, 35 years old, calm and confident",
-    language: "English"
-  })
+const client = new MurmrClient({
+  apiKey: process.env.MURMR_API_KEY!,
 });
 
-const reader = response.body.getReader();
-const decoder = new TextDecoder();
+const stream = await client.voices.designStream({
+  input: 'Welcome to our podcast. Today we explore the future of AI.',
+  voice_description: 'A warm, professional female voice, 35 years old, calm and confident',
+});
 
-while (true) {
-  const { done, value } = await reader.read();
-  if (done) break;
+const pcmChunks: Buffer[] = [];
 
-  const chunk = decoder.decode(value);
-  const lines = chunk.split('\n');
-
-  for (const line of lines) {
-    if (line.startsWith('data: ')) {
-      const data = JSON.parse(line.slice(6));
-
-      if (data.chunk) {
-        // data.chunk is base64 PCM audio (24kHz, 16-bit, mono)
-        console.log(`Chunk ${data.chunk_index}, ${data.sample_rate}Hz`);
-      }
-
-      if (data.done) {
-        console.log(`Complete: ${data.total_chunks} chunks`);
-      }
-    }
+for await (const chunk of stream) {
+  const audioData = chunk.audio || chunk.chunk;
+  if (audioData) {
+    pcmChunks.push(Buffer.from(audioData, 'base64'));
+  }
+  if (chunk.first_chunk_latency_ms) {
+    console.log(`First chunk in ${chunk.first_chunk_latency_ms}ms`);
+  }
+  if (chunk.done) {
+    console.log(`Complete: ${chunk.total_chunks} chunks in ${chunk.total_time_ms}ms`);
   }
 }
+```
+
+**Python SDK**
+
+```python
+import os
+from murmr import MurmrClient
+
+with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
+    with client.voices.design_stream(
+        input="Welcome to our podcast. Today we explore the future of AI.",
+        voice_description="A warm, professional female voice, 35 years old, calm and confident",
+        language="English",
+    ) as stream:
+        pcm_chunks = []
+        for chunk in stream:
+            pcm_chunks.append(chunk.audio_bytes)
+
+        pcm_audio = b"".join(pcm_chunks)
+```
+
+**Python (async)**
+
+```python
+import asyncio
+import os
+from murmr import AsyncMurmrClient
+
+async def main():
+    async with AsyncMurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
+        async with client.voices.design_stream(
+            input="Welcome to our podcast. Today we explore the future of AI.",
+            voice_description="A warm, professional female voice, 35 years old, calm and confident",
+            language="English",
+        ) as stream:
+            async for chunk in stream:
+                pcm_data = chunk.audio_bytes
+
+asyncio.run(main())
+```
+
+## Complete WAV (SDK)
+
+The SDK's `design()` method streams internally, collects all chunks, and returns a complete WAV buffer. Use this when you want the full audio file without handling chunks manually.
+
+**Node.js SDK**
+
+```typescript
+import { MurmrClient } from '@murmr/sdk';
+import { writeFileSync } from 'node:fs';
+
+const client = new MurmrClient({
+  apiKey: process.env.MURMR_API_KEY!,
+});
+
+const wav = await client.voices.design({
+  input: 'The quick brown fox jumps over the lazy dog.',
+  voice_description: 'A deep, resonant male voice with a slow, deliberate pace',
+  language: 'English',
+});
+
+writeFileSync('voicedesign.wav', wav);
+```
+
+**Python SDK**
+
+```python
+import os
+from murmr import MurmrClient
+
+with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
+    wav = client.voices.design(
+        input="The quick brown fox jumps over the lazy dog.",
+        voice_description="A young woman with a clear, upbeat tone and American accent",
+        language="English",
+    )
+
+    with open("output.wav", "wb") as f:
+        f.write(wav)
 ```
 
 ## SSE Event Format
@@ -183,17 +200,50 @@ See [SSE Streaming](./streaming.md) for complete integration guide including Web
 
 ## Save Voice for Reuse
 
-Found a voice you love? Save it to ensure consistency across all your content. See the [Voice Management](./voices.md) page for the full API.
+Each VoiceDesign call generates a unique voice. To reuse the same voice consistently, save it with [`voices.save()`](./voices.md). The saved voice ID can then be used with [`/v1/audio/speech`](./speech.md).
 
-```Workflow
-1. Generate audio with VoiceDesign
-   POST /v1/voices/design → SSE stream with PCM audio
+**Node.js SDK**
 
-2. Save the voice (send the audio to the Next.js app)
-   POST /api/v1/voices with the audio → Get voice_abc123
+```typescript
+const inputText = 'This is the reference audio for my saved voice.';
 
-3. Use saved voice in future requests
-   POST /v1/audio/speech with voice: "voice_abc123"
+const wav = await client.voices.design({
+  input: inputText,
+  voice_description: 'A confident male tech presenter, mid-30s, American',
+});
+
+const saved = await client.voices.save({
+  name: 'Tech Presenter',
+  description: 'Confident male, mid-30s, American, for product demos',
+  audio: wav,
+  ref_text: inputText,
+  language: 'English',
+});
+
+console.log(`Saved as ${saved.id} — use this ID in future requests`);
+```
+
+**Python SDK**
+
+```python
+text = "This is my reference audio for voice saving."
+description = "A calm, professional female voice with an American accent"
+
+wav = client.voices.design(
+    input=text,
+    voice_description=description,
+    language="English",
+)
+
+saved = client.voices.save(
+    name="Professional Female",
+    audio=wav,
+    description=description,
+    ref_text=text,
+    language="English",
+)
+
+print(f"Saved voice ID: {saved.id}")
 ```
 
 Saved voice limits by plan: Free (3), Starter (10), Pro (25), Realtime (50), Scale (100)
