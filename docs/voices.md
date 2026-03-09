@@ -20,79 +20,112 @@ Extract voice embeddings from VoiceDesign audio and save for future use. Require
 | `name` | string | Yes | -- | Display name for the voice (1-50 characters) |
 | `audio` | string | Yes | -- | Base64-encoded WAV audio from VoiceDesign generation |
 | `description` | string | Yes | -- | Original voice description (stored for reference) |
+| `ref_text` | string | Yes | -- | Transcript of the reference audio. Required for accurate embedding extraction. |
 | `language` | string | No | English | Language of the voice (e.g., "English", "Spanish", "Japanese") |
 
 **cURL**
 
 ```curl
-# First, generate audio with VoiceDesign
-curl -X POST "https://api.murmr.dev/v1/voices/design" \
-  -H "Authorization: Bearer YOUR_API_KEY" \
-  -d '{"text": "Sample", "voice_description": "A warm voice", "language": "English"}' \
-  > stream_output.txt
-
-# Collect PCM from SSE, convert to WAV, then base64 encode
-# (The SDK handles this automatically)
+# First, generate audio with VoiceDesign and save the WAV file
+# Then base64 encode it
 AUDIO_B64=$(base64 -i sample.wav)
 
-# Save the voice
 curl -X POST "https://api.murmr.dev/v1/voices" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d "{
     \"name\": \"My Narrator\",
     \"description\": \"A warm, professional voice\",
-    \"audio\": \"$AUDIO_B64\"
+    \"audio\": \"$AUDIO_B64\",
+    \"ref_text\": \"Sample audio text here.\",
+    \"language\": \"English\"
   }"
 ```
 
-**Python**
+**Node.js SDK**
 
-```python
-from murmr import MurmrClient
+```typescript
+import { MurmrClient } from '@murmr/sdk';
 
-client = MurmrClient(api_key="YOUR_API_KEY")
+const client = new MurmrClient({
+  apiKey: process.env.MURMR_API_KEY!,
+});
 
-# 1. Generate audio with VoiceDesign
-wav = client.voices.design(
-    input="Sample audio for voice extraction",
-    voice_description="A warm, professional voice",
-    language="English",
-)
+// Generate reference audio
+const inputText = 'This is the reference recording for my new voice.';
+const wav = await client.voices.design({
+  input: inputText,
+  voice_description: 'A soothing female narrator, mid-30s, neutral American accent',
+});
 
-# 2. Save the voice for reuse
-voice = client.voices.save(
-    name="My Narrator",
-    audio=wav,
-    description="A warm, professional voice",
-)
-print(f"Saved as: {voice.id}")  # voice_abc123def456
+// Save the voice
+const saved = await client.voices.save({
+  name: 'Soothing Narrator',
+  description: 'Female narrator, mid-30s, neutral American, for audiobooks',
+  audio: wav,
+  ref_text: inputText,
+  language: 'English',
+});
 
-# 3. Use the saved voice
-job = client.speech.create(input="Hello!", voice=voice.id)
+console.log(`ID: ${saved.id}`);
+console.log(`Embedding size: ${saved.prompt_size_bytes} bytes`);
 ```
 
-**JavaScript (SDK)**
+**Python SDK**
 
-```javascript
-import { MurmrClient } from "@murmr/sdk";
+```python
+import os
+from murmr import MurmrClient
 
-const client = new MurmrClient({ apiKey: "YOUR_API_KEY" });
+with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
+    text = "This is my reference sample for voice extraction."
+    description = "A warm, confident male voice with a slight rasp"
 
-// 1. Generate audio with VoiceDesign
-const wav = await client.voices.design({
-  input: "Sample audio for voice extraction",
-  voice_description: "A warm, professional voice",
-});
+    wav = client.voices.design(
+        input=text,
+        voice_description=description,
+        language="English",
+    )
 
-// 2. Save the voice for reuse
-const voice = await client.voices.save({
-  name: "My Narrator",
-  audio: wav,
-  description: "A warm, professional voice",
-});
+    saved = client.voices.save(
+        name="Confident Male",
+        audio=wav,
+        description=description,
+        ref_text=text,
+        language="English",
+    )
 
-console.log(`Saved as: ${voice.id}`);  // voice_abc123def456
+    print(f"Voice ID: {saved.id}")
+    print(f"Prompt size: {saved.prompt_size_bytes} bytes")
+```
+
+**Python (async)**
+
+```python
+import asyncio
+import os
+from murmr import AsyncMurmrClient
+
+async def main():
+    async with AsyncMurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
+        text = "This is my reference sample for voice extraction."
+        description = "A warm, confident male voice with a slight rasp"
+
+        wav = await client.voices.design(
+            input=text,
+            voice_description=description,
+        )
+
+        saved = await client.voices.save(
+            name="Confident Male",
+            audio=wav,
+            description=description,
+            ref_text=text,
+        )
+
+        print(f"Voice ID: {saved.id}")
+
+asyncio.run(main())
 ```
 
 ### Response
@@ -116,9 +149,32 @@ console.log(`Saved as: ${voice.id}`);  // voice_abc123def456
 
 Retrieve all voices saved to your account. Requires API key authentication.
 
-```cURL
+**cURL**
+
+```curl
 curl "https://api.murmr.dev/v1/voices" \
   -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+**Node.js SDK**
+
+```typescript
+const { voices, saved_count, saved_limit } = await client.voices.list();
+
+console.log(`Using ${saved_count}/${saved_limit} voice slots`);
+for (const voice of voices) {
+  console.log(`${voice.id}: ${voice.name} (${voice.language})`);
+}
+```
+
+**Python SDK**
+
+```python
+response = client.voices.list_voices()
+
+print(f"Saved: {response.saved_count}/{response.saved_limit}")
+for voice in response.voices:
+    print(f"  {voice.id}: {voice.name} ({voice.language})")
 ```
 
 ### Response
@@ -159,9 +215,25 @@ The `saved_limit` varies by plan. See limits below.
 
 Permanently delete a saved voice from your account. Requires API key authentication.
 
-```cURL
+**cURL**
+
+```curl
 curl -X DELETE "https://api.murmr.dev/v1/voices/voice_abc123def456" \
   -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+**Node.js SDK**
+
+```typescript
+const result = await client.voices.delete('voice_abc123def456');
+console.log(result.message); // "Voice deleted successfully"
+```
+
+**Python SDK**
+
+```python
+result = client.voices.delete("voice_abc123def456")
+print(f"Deleted: {result.success}")
 ```
 
 ### Response
@@ -178,18 +250,22 @@ curl -X DELETE "https://api.murmr.dev/v1/voices/voice_abc123def456" \
 
 ## Extract Embeddings
 
+> **💡 Building a multi-tenant app?**
+> Use [Portable Voice Embeddings](./portable-embeddings.md) to store voice data in your own database and pass it via `voice_clone_prompt` — no saved voice IDs needed.
+
 Extract voice embeddings from audio. This endpoint goes through the Worker at `api.murmr.dev` and uses API key auth.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `audio` | string | Yes | -- | Base64-encoded WAV audio to extract embeddings from |
+| `ref_text` | string | Yes | -- | Transcript of the reference audio. Required for accurate embedding extraction. |
 | `model` | string | No | base | Model to use: "base" (default) or "base_06b" |
 
 ```cURL
 curl -X POST "https://api.murmr.dev/v1/voices/extract-embeddings" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"audio": "<base64-wav>"}'
+  -d '{"audio": "<base64-wav>", "ref_text": "Transcript of the audio."}'
 ```
 
 ## Voice ID Format

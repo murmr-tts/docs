@@ -42,44 +42,69 @@ curl -X POST "https://api.murmr.dev/v1/audio/speech" \
 # {"id": "job_a1b2c3d4e5f6g7h8", "status": "queued", "created_at": "..."}
 ```
 
-**Python**
+**Node.js SDK**
 
-```python
-import requests
+```typescript
+import { MurmrClient, isAsyncResponse } from '@murmr/sdk';
 
-response = requests.post(
-    "https://api.murmr.dev/v1/audio/speech",
-    headers={"Authorization": "Bearer YOUR_API_KEY"},
-    json={
-        "text": "A long article to convert to speech...",
-        "voice": "voice_abc123",
-        "response_format": "mp3"
-    }
-)
+const client = new MurmrClient({ apiKey: process.env.MURMR_API_KEY! });
 
-job = response.json()
-print(f"Job submitted: {job['id']}")
-# {"id": "job_a1b2c3d4e5f6g7h8", "status": "queued", "created_at": "..."}
-```
-
-**JavaScript**
-
-```javascript
-const response = await fetch("https://api.murmr.dev/v1/audio/speech", {
-  method: "POST",
-  headers: {
-    "Authorization": "Bearer YOUR_API_KEY",
-    "Content-Type": "application/json"
-  },
-  body: JSON.stringify({
-    text: "A long article to convert to speech...",
-    voice: "voice_abc123",
-    response_format: "mp3"
-  })
+const result = await client.speech.create({
+  input: 'A long article to convert to speech...',
+  voice: 'voice_abc123',
+  response_format: 'mp3',
+  webhook_url: 'https://yourapp.com/webhooks/tts',
 });
 
-const job = await response.json();
-// { id: "job_a1b2c3d4e5f6g7h8", status: "queued", created_at: "..." }
+if (isAsyncResponse(result)) {
+  console.log(`Job ID: ${result.id}`);
+  console.log(`Status: ${result.status}`);  // "queued"
+}
+```
+
+**Python SDK**
+
+```python
+import os
+from murmr import MurmrClient
+
+with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
+    job = client.speech.create(
+        input="A long article to convert to speech...",
+        voice="voice_abc123",
+        response_format="mp3",
+        webhook_url="https://yourapp.com/webhooks/tts",
+    )
+
+    print(f"Job ID: {job.id}")
+    print(f"Status: {job.status}")  # "queued"
+```
+
+**Python (async)**
+
+```python
+import asyncio
+import os
+from murmr import AsyncMurmrClient
+
+async def main():
+    async with AsyncMurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
+        job = await client.speech.create(
+            input="Async job submission.",
+            voice="voice_abc123",
+            response_format="opus",
+            webhook_url="https://yourapp.com/webhooks/tts",
+        )
+
+        result = await client.jobs.wait_for_completion(
+            job.id,
+            poll_interval_s=2.0,
+        )
+
+        with open("output.opus", "wb") as f:
+            f.write(result.audio_bytes)
+
+asyncio.run(main())
 ```
 
 Optionally add `webhook_url` to receive the completed audio via POST to your server. See [Webhook Delivery](#webhook-delivery) below.
@@ -143,103 +168,99 @@ Returns current job status. Requires the same API key used to submit the job. On
 
 ## Polling Example
 
-**Python**
+**Node.js SDK**
 
-```python
-import time
-import requests
+```typescript
+import { MurmrClient, MurmrError } from '@murmr/sdk';
+import { writeFileSync } from 'fs';
 
-API_KEY = "YOUR_API_KEY"
-BASE_URL = "https://api.murmr.dev"
+const client = new MurmrClient({ apiKey: process.env.MURMR_API_KEY! });
 
-# 1. Submit job
-resp = requests.post(
-    f"{BASE_URL}/v1/audio/speech",
-    headers={"Authorization": f"Bearer {API_KEY}"},
-    json={
-        "text": "Long text to synthesize...",
-        "voice": "voice_abc123",
-        "response_format": "mp3"
-    }
-)
-job = resp.json()
-job_id = job["id"]
-print(f"Submitted: {job_id}")
+// Option 1: Manual polling
+const status = await client.jobs.get('job_a1b2c3d4e5f6g7h8');
 
-# 2. Poll for completion
-while True:
-    poll = requests.get(
-        f"{BASE_URL}/v1/jobs/{job_id}",
-        headers={"Authorization": f"Bearer {API_KEY}"}
-    )
+if (status.status === 'completed' && status.audio_base64) {
+  const audio = Buffer.from(status.audio_base64, 'base64');
+  writeFileSync(`output.${status.response_format || 'wav'}`, audio);
+}
 
-    # Completed: binary audio returned
-    content_type = poll.headers.get("Content-Type", "")
-    if content_type.startswith("audio/"):
-        ext = "mp3" if "mpeg" in content_type else content_type.split("/")[-1]
-        filename = f"{job_id}.{ext}"
-        with open(filename, "wb") as f:
-            f.write(poll.content)
-        duration = poll.headers.get("X-Audio-Duration-Ms", "?")
-        print(f"Saved {filename} ({duration}ms audio)")
-        break
+// Option 2: Wait for completion (polls automatically)
+try {
+  const result = await client.jobs.waitForCompletion('job_a1b2c3d4e5f6g7h8', {
+    pollIntervalMs: 3000,
+    timeoutMs: 900_000,
+    onPoll: (status) => console.log(`Status: ${status.status}`),
+  });
 
-    # Still in progress or failed
-    data = poll.json()
-    if data["status"] == "failed":
-        print(f"Failed: {data.get('error')}")
-        break
-
-    print(f"Status: {data['status']}...")
-    time.sleep(3)
-```
-
-**JavaScript**
-
-```javascript
-const API_KEY = "YOUR_API_KEY";
-const BASE_URL = "https://api.murmr.dev";
-
-// 1. Submit job
-const submitResp = await fetch(`${BASE_URL}/v1/audio/speech`, {
-  method: "POST",
-  headers: {
-    "Authorization": `Bearer ${API_KEY}`,
-    "Content-Type": "application/json"
-  },
-  body: JSON.stringify({
-    text: "Long text to synthesize...",
-    voice: "voice_abc123",
-    response_format: "mp3"
-  })
-});
-const job = await submitResp.json();
-
-// 2. Poll for completion
-async function pollJob(jobId) {
-  while (true) {
-    const resp = await fetch(`${BASE_URL}/v1/jobs/${jobId}`, {
-      headers: { "Authorization": `Bearer ${API_KEY}` }
-    });
-
-    const ct = resp.headers.get("Content-Type") || "";
-
-    // Completed: binary audio
-    if (ct.startsWith("audio/")) {
-      return await resp.blob();
-    }
-
-    // In progress or failed
-    const data = await resp.json();
-    if (data.status === "failed") throw new Error(data.error);
-
-    await new Promise(r => setTimeout(r, 3000));
+  if (result.audio_base64) {
+    writeFileSync('output.wav', Buffer.from(result.audio_base64, 'base64'));
+  }
+} catch (error) {
+  if (error instanceof MurmrError && error.code === 'JOB_FAILED') {
+    console.error('Job failed:', error.message);
   }
 }
 
-const audioBlob = await pollJob(job.id);
-const audio = new Audio(URL.createObjectURL(audioBlob));
-audio.play();
+// Option 3: Submit and wait in one call
+const final = await client.speech.createAndWait({
+  input: 'Submit and wait in one call.',
+  voice: 'voice_abc123',
+  response_format: 'mp3',
+});
+```
+
+**Python SDK**
+
+```python
+import os
+from murmr import MurmrClient, MurmrError
+
+with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
+    # Option 1: Manual polling
+    status = client.jobs.get("job_a1b2c3d4e5f6g7h8")
+
+    if status.status == "completed":
+        with open("output.mp3", "wb") as f:
+            f.write(status.audio_bytes)
+
+    # Option 2: Wait for completion
+    try:
+        result = client.jobs.wait_for_completion(
+            "job_a1b2c3d4e5f6g7h8",
+            poll_interval_s=3.0,
+            timeout_s=120.0,
+            on_poll=lambda s: print(f"Polling: {s.status}"),
+        )
+        with open("output.mp3", "wb") as f:
+            f.write(result.audio_bytes)
+    except MurmrError as e:
+        if e.code == "JOB_FAILED":
+            print(f"Job failed: {e.message}")
+
+    # Option 3: Submit and wait in one call
+    result = client.speech.create_and_wait(
+        input="Submit and wait in one call.",
+        voice="voice_abc123",
+        response_format="mp3",
+    )
+```
+
+**cURL**
+
+```curl
+# Poll for status
+curl -s "https://api.murmr.dev/v1/jobs/job_a1b2c3d4e5f6g7h8" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+
+# When completed: returns binary audio (Content-Type: audio/*)
+# When in progress: returns JSON with status
+# When failed: returns JSON with error
+# When expired: returns 410 Gone
+
+# Save completed audio to file
+curl "https://api.murmr.dev/v1/jobs/job_a1b2c3d4e5f6g7h8" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  --output output.mp3
 ```
 
 > **💡 Polling Best Practice**
