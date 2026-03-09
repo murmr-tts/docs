@@ -2,61 +2,67 @@
 
 VoiceDesign creates voices from natural language descriptions. This guide shows you what works, using examples directly from the [Qwen3-TTS documentation](https://github.com/QwenLM/Qwen3-TTS).
 
+> **💡 Try as You Read**
+> Open the [Voice Playground](https://murmr.dev/en/dashboard/playground) in another tab. Copy any example from this guide and hear the result instantly.
+
 ## What You Can Control
 
-VoiceDesign supports "speech generation driven by natural language instructions for flexible control over timbre, emotion, and prosody" ([Qwen3-TTS technical report](https://arxiv.org/abs/2601.15621)).
+According to the [Qwen3-TTS technical report](https://arxiv.org/abs/2601.15621), VoiceDesign supports “speech generation driven by natural language instructions for flexible control over timbre, emotion, and prosody.”
 
-### Demographics
+#### Benchmark Performance
 
-- Age (elderly, young, 17 years old)
-- Gender (male, female)
+From the arXiv paper, aggregate metrics on how well the model follows descriptions:
 
-### Vocal Qualities
+82-85%
 
-- Pitch (high-pitched, deep)
-- Timbre (warm, bright, mystical)
-- Vocal range (tenor, bass)
+APS (Attribute Perception)
 
-### Emotion and Mood
+81-82%
 
-- Emotional states (excited, incredulous, joyful)
-- Layered emotions (panic + incredulity)
+DSD (Description-Speech Consistency)
 
-### Delivery Style
+Chinese scores slightly higher than English. These are aggregate metrics.
 
-- Speaking pace (slowly, quickly, measured)
-- Energy level (enthusiastic, calm)
-- Personality (confident, gentle, playful)
+## Official Examples
 
-### Context and Purpose
+These examples come directly from the [Qwen3-TTS GitHub repository](https://github.com/QwenLM/Qwen3-TTS). They demonstrate the style and level of detail that works well.
 
-- Use case hints (for bedtime stories)
-- Character archetypes (wizard, CEO)
+Chinese
 
-## Official Qwen3-TTS Examples
-
-These examples come directly from the [Qwen3-TTS GitHub repository](https://github.com/QwenLM/Qwen3-TTS):
-
-| Description | Use Case |
-|-------------|----------|
-| "A wise elderly wizard with a deep, mystical voice. Speaks slowly and deliberately with gravitas." | Fantasy narrator, audiobook |
-| "Excited teenage girl, high-pitched voice with lots of energy and enthusiasm. Speaking quickly." | Energetic character, animation |
-| "Professional male CEO voice, confident and authoritative, measured pace" | Business content, corporate |
-| "Warm grandmother voice, gentle and soothing, perfect for bedtime stories" | Children's content, storytelling |
-| "Speak in an incredulous tone, but with a hint of panic beginning to creep into your voice." | Emotional acting, drama |
-| "Male, 17 years old, tenor range, gaining confidence - deeper breath support now, though vowels still tighten when nervous" | Age-specific character |
-
-### Chinese Example
-
-> "&#x4F53;&#x73B0;&#x6492;&#x5A07;&#x7A1A;&#x5AE9;&#x7684;&#x841D;&#x8389;&#x5973;&#x58F0;&#xFF0C;&#x97F3;&#x8C03;&#x504F;&#x9AD8;&#x4E14;&#x8D77;&#x4F0F;&#x660E;&#x663E;&#xFF0C;&#x8425;&#x9020;&#x51FA;&#x9ECF;&#x4EBA;&#x3001;&#x505A;&#x4F5C;&#x53C8;&#x523B;&#x610F;&#x5356;&#x840C;&#x7684;&#x542C;&#x89C9;&#x6548;&#x679C;&#x3002;"
+`“体现撒娇稚嫩的萝莉女声，音调偏高且起伏明显，营造出黏人、做作又刻意卖萌的听觉效果。”`
 
 Translation: A coquettish, immature young female voice with high pitch and obvious fluctuations, creating a clingy, affected, and deliberately cute auditory effect.
 
-## Description Building Formula
+Source: GitHub README
 
-Combine character + age + emotion + delivery:
+## Patterns That Work
 
-```
+Analyzing the official examples reveals consistent patterns for effective descriptions:
+
+### ✓ What Official Examples Include
+
+- **Character archetypes** — wizard, CEO, grandmother
+- **Specific ages** — elderly, teenage, 17 years old
+- **Emotional layers** — incredulous + panic
+- **Pace descriptors** — slowly, quickly, measured
+- **Purpose hints** — for bedtime stories
+- **Vocal range** — tenor, high-pitched
+
+### ✗ What to Avoid
+
+- Celebrity references (“like Morgan Freeman”)
+- Specific accent requests (“British accent”)
+- Technical audio specifications (“16kHz sample rate”)
+- Contradictory traits (“deep high-pitched voice”)
+- Overly long descriptions (keep under 500 chars)
+
+The model does not support accent or nationality control via voice descriptions. Use the `language` parameter instead to control the output language.
+
+## Building Effective Descriptions
+
+The official examples suggest a pattern: combine character + age + emotion + delivery. Here's how to construct your own:
+
+```Pattern
 [Character/Role] + [Age/Demographics] + [Vocal Quality] + [Emotional State] + [Delivery Style]
 
 Examples:
@@ -65,95 +71,41 @@ Examples:
 "Excited teenage girl" + "high-pitched" + "lots of energy" + "speaking quickly"
 ```
 
-You don't need all elements. "Wizard" already implies age and mystical qualities. Let the model infer what you don't specify.
-
-## Good vs Bad Examples
-
-### Good
-
-- Use character archetypes when appropriate
-- Be specific about age when it matters
-- Layer emotions for nuanced performances (e.g., "incredulous + panic")
-- Include purpose hints for context (e.g., "for bedtime stories")
-- Describe pace and energy level
-
-### Bad
-
-- Celebrity references ("like Morgan Freeman") -- not supported
-- Specific accent requests ("British accent") -- use the `language` parameter instead
-- Technical audio specifications ("16kHz sample rate")
-- Contradictory traits ("deep high-pitched voice")
-- Overly long descriptions (keep under 500 chars)
-
-## Using Descriptions with the SDKs
-
-Pass your crafted `voice_description` to the `voices.design()` method to generate audio. The description controls the voice's identity while the `input` text controls what is spoken:
-
-**TypeScript**
-```typescript
-import { MurmrClient } from '@murmr/sdk';
-import { writeFileSync } from 'fs';
-
-const client = new MurmrClient({ apiKey: process.env.MURMR_API_KEY! });
-
-const wav = await client.voices.design({
-  input: 'Once upon a time, in a land far away...',
-  voice_description: 'A wise elderly wizard with a deep, mystical voice. Speaks slowly and deliberately with gravitas.',
-  language: 'English',
-});
-
-writeFileSync('wizard.wav', wav);
-```
-
-**Python (sync)**
-```python
-import os
-from murmr import MurmrClient
-
-with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-    wav = client.voices.design(
-        input="Once upon a time, in a land far away...",
-        voice_description="A wise elderly wizard with a deep, mystical voice. Speaks slowly and deliberately with gravitas.",
-        language="English",
-    )
-
-    with open("wizard.wav", "wb") as f:
-        f.write(wav)
-```
-
-**Python (async)**
-```python
-import asyncio
-import os
-from murmr import AsyncMurmrClient
-
-async def main():
-    async with AsyncMurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-        wav = await client.voices.design(
-            input="Once upon a time, in a land far away...",
-            voice_description="A wise elderly wizard with a deep, mystical voice. Speaks slowly and deliberately with gravitas.",
-            language="English",
-        )
-
-        with open("wizard.wav", "wb") as f:
-            f.write(wav)
-
-asyncio.run(main())
-```
+> You don't need all elements. The wizard example works because “wizard” already implies age and mystical qualities. Let the model infer what you don't specify.
 
 ## Supported Languages
 
 VoiceDesign supports 10 languages for both the description and the output speech:
 
-Chinese, English, Japanese, Korean, German, French, Russian, Portuguese, Spanish, Italian
+Source: [HuggingFace Model Card](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign)
+
+## Quick Reference
+
+### Do
+
+- • Use character archetypes when appropriate
+- • Be specific about age when it matters
+- • Layer emotions for nuanced performances
+- • Include purpose hints for context
+- • Describe pace and energy level
+
+### Avoid
+
+- • Celebrity impersonation requests
+- • Contradictory traits
+- • Technical audio specifications
+- • Descriptions over 500 characters
 
 ## Sources
 
-- [arXiv Technical Report](https://arxiv.org/abs/2601.15621) -- Performance metrics, training details
-- [GitHub Repository](https://github.com/QwenLM/Qwen3-TTS) -- Official examples, API documentation
-- [HuggingFace Model Card](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign) -- Supported languages, model specifications
+All claims in this guide are backed by official Qwen3-TTS documentation:
+
+- [arXiv Technical Report](https://arxiv.org/abs/2601.15621) — Performance metrics, training details
+- [GitHub Repository](https://github.com/QwenLM/Qwen3-TTS) — Official examples, API documentation
+- [HuggingFace Model Card](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign) — Supported languages, model specifications
 
 ## See Also
 
-- [Style Instructions](./style-instructions.md) -- Control delivery through voice descriptions
-- [OpenAI Migration](./openai-migration.md) -- Migrating from OpenAI's fixed voices
+- [VoiceDesign API](./voicedesign.md) — Complete API reference
+- [Style Instructions](./style-instructions.md) — Control delivery through voice descriptions
+- [Voice Playground](https://murmr.dev/en/dashboard/playground) — Test descriptions before coding

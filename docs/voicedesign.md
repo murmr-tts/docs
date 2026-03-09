@@ -1,39 +1,43 @@
-# Voice Design
+# VoiceDesign API
 
-Voice Design lets you describe any voice in natural language and generate speech in a single request. No pre-recorded samples, no voice IDs -- just describe what you want and murmr creates it.
+Create any voice by describing it in natural language. Generate speech with custom voices — no presets, no limitations.
+
+> **💡 murmr's Key Differentiator**
+> VoiceDesign lets you describe any voice in natural language — "A warm, professional female voice, calm and confident" — and generate speech with that voice instantly. Try different descriptions in the [Playground](https://murmr.dev/en/dashboard/playground) before coding.
 
 ## Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/v1/voices/design` | POST | SSE streaming -- returns audio chunks via Server-Sent Events |
-| `/v1/voices/design/stream` | POST | Alias for the above (explicit stream path) |
+`POST /v1/voices/design`
 
-Both endpoints return Server-Sent Events with PCM audio chunks. The `/stream` suffix is optional -- it exists for consistency with the Saved Voices API which has separate batch and streaming endpoints.
+SSE streaming — low-latency audio chunks
 
-## Parameters
+`POST /v1/voices/design/stream`
+
+SSE streaming — alias for the above
+
+> **ℹ️ Both endpoints stream**
+> Both `/v1/voices/design` and `/v1/voices/design/stream` return Server-Sent Events with PCM audio chunks. The `/stream` suffix is optional — it exists for consistency with the Saved Voices API which has separate batch and streaming endpoints.
+
+## Request Parameters
+
+Send a JSON body with the following parameters:
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `text` | string | Yes | -- | Text to synthesize. Max 4,096 characters. |
-| `voice_description` | string | Yes | -- | Natural language description of the desired voice. Max 500 characters. |
-| `language` | string | No | `Auto` | Language name. SDKs default to `English`; raw API defaults to `Auto`. See [Languages](./languages.md). |
-| `input` | string | -- | -- | Alias for `text` (OpenAI API compatibility). |
+| `text` | string | Yes | -- | The text to synthesize. Maximum 4,096 characters. |
+| `voice_description` | string | Yes | -- | Natural language description of the voice (e.g., "A warm, friendly male voice"). Maximum 500 characters. |
+| `language` | string | No | Auto | Output language: English, Spanish, Portuguese, German, French, Italian, Chinese, Japanese, Korean, Russian, or "Auto" (detect from text) |
+| `input` | string | No | -- | Alias for text (OpenAI API compatibility). If both text and input are provided, text takes precedence. |
 
-> **Note:** The `instruct` parameter is **not** available for Voice Design. It only works with saved voices via `/v1/audio/speech` -- see the [Speech guide](./speech.md) for details.
+## Streaming Request
 
-## How It Works
+VoiceDesign always streams audio as Server-Sent Events. Audio chunks arrive progressively for low-latency playback.
 
-Voice Design always streams via SSE. Both `/v1/voices/design` and `/v1/voices/design/stream` return audio chunks via Server-Sent Events as they are generated. ~450ms to first chunk.
+**cURL**
 
-## Streaming Examples
-
-Stream a Voice Design generation via SSE. Audio chunks arrive as base64 PCM. The curl output shows raw SSE events:
-
-**curl**
-```bash
+```curl
 curl -X POST "https://api.murmr.dev/v1/voices/design" \
-  -H "Authorization: Bearer $MURMR_API_KEY" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "text": "Welcome to our podcast. Today we explore the future of AI.",
@@ -42,206 +46,170 @@ curl -X POST "https://api.murmr.dev/v1/voices/design" \
   }'
 ```
 
-Stream a Voice Design and process chunks individually. The `first_chunk_latency_ms` on the first chunk reports time-to-first-chunk:
+**Python**
 
-**TypeScript**
-```typescript
-import { MurmrClient } from '@murmr/sdk';
+```python
+import requests
+import base64
+import io
+import wave
 
-const client = new MurmrClient({
-  apiKey: process.env.MURMR_API_KEY!,
+response = requests.post(
+    "https://api.murmr.dev/v1/voices/design",
+    headers={
+        "Authorization": "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json"
+    },
+    json={
+        "text": "Welcome to our podcast. Today we explore the future of AI.",
+        "voice_description": "A warm, professional female voice, 35 years old, calm and confident",
+        "language": "English"
+    },
+    stream=True
+)
+
+# Collect PCM chunks from SSE stream
+pcm_chunks = []
+for line in response.iter_lines():
+    if line and line.startswith(b"data: "):
+        import json
+        data = json.loads(line[6:])
+
+        if data.get("chunk"):
+            pcm_chunks.append(base64.b64decode(data["chunk"]))
+
+        if data.get("done"):
+            print(f"Complete: {data['total_chunks']} chunks, {data['total_time_ms']}ms")
+
+# Save as WAV
+all_pcm = b"".join(pcm_chunks)
+buf = io.BytesIO()
+with wave.open(buf, "wb") as wf:
+    wf.setnchannels(1)
+    wf.setsampwidth(2)
+    wf.setframerate(24000)
+    wf.writeframes(all_pcm)
+
+with open("podcast-intro.wav", "wb") as f:
+    f.write(buf.getvalue())
+print("Saved podcast-intro.wav")
+```
+
+**JavaScript**
+
+```javascript
+const response = await fetch("https://api.murmr.dev/v1/voices/design", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer YOUR_API_KEY",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    text: "Welcome to our podcast. Today we explore the future of AI.",
+    voice_description: "A warm, professional female voice, 35 years old, calm and confident",
+    language: "English"
+  })
 });
 
-const stream = await client.voices.designStream({
-  input: 'Streaming voice design delivers faster time to first audio.',
-  voice_description: 'A warm, friendly female voice with natural inflection',
-});
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
 
-const pcmChunks: Buffer[] = [];
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
 
-for await (const chunk of stream) {
-  const audioData = chunk.audio || chunk.chunk;
-  if (audioData) {
-    pcmChunks.push(Buffer.from(audioData, 'base64'));
-  }
-  if (chunk.first_chunk_latency_ms) {
-    console.log(`First chunk in ${chunk.first_chunk_latency_ms}ms`);
-  }
-  if (chunk.done) {
-    console.log(`Complete: ${chunk.total_chunks} chunks in ${chunk.total_time_ms}ms`);
+  const chunk = decoder.decode(value);
+  const lines = chunk.split('\n');
+
+  for (const line of lines) {
+    if (line.startsWith('data: ')) {
+      const data = JSON.parse(line.slice(6));
+
+      if (data.chunk) {
+        // data.chunk is base64 PCM audio (24kHz, 16-bit, mono)
+        console.log(`Chunk ${data.chunk_index}, ${data.sample_rate}Hz`);
+      }
+
+      if (data.done) {
+        console.log(`Complete: ${data.total_chunks} chunks`);
+      }
+    }
   }
 }
 ```
 
-**Python (sync)**
-```python
-import os
-from murmr import MurmrClient
-
-with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-    with client.voices.design_stream(
-        input="Streaming voice design delivers audio with minimal latency.",
-        voice_description="A deep, authoritative male narrator",
-        language="English",
-    ) as stream:
-        pcm_chunks = []
-        for chunk in stream:
-            pcm_chunks.append(chunk.audio_bytes)
-
-        pcm_audio = b"".join(pcm_chunks)
-```
-
-**Python (async)**
-```python
-import asyncio
-import os
-from murmr import AsyncMurmrClient
-
-async def main():
-    async with AsyncMurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-        async with client.voices.design_stream(
-            input="Streaming voice design delivers audio with minimal latency.",
-            voice_description="A deep, authoritative male narrator",
-            language="English",
-        ) as stream:
-            async for chunk in stream:
-                pcm_data = chunk.audio_bytes
-
-asyncio.run(main())
-```
-
-## SDK Convenience Methods (Complete WAV)
-
-The SDK's `design()` / `voices.design()` method streams internally, collects all chunks, and returns a complete WAV buffer (24kHz, mono, 16-bit PCM). Use this when you want the full audio file without handling chunks manually:
-
-**TypeScript**
-```typescript
-import { MurmrClient } from '@murmr/sdk';
-import { writeFileSync } from 'node:fs';
-
-const client = new MurmrClient({
-  apiKey: process.env.MURMR_API_KEY!,
-});
-
-const wav = await client.voices.design({
-  input: 'The quick brown fox jumps over the lazy dog.',
-  voice_description: 'A deep, resonant male voice with a slow, deliberate pace',
-  language: 'English',
-});
-
-writeFileSync('voicedesign.wav', wav);
-```
-
-**Python**
-```python
-import os
-from murmr import MurmrClient
-
-with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-    wav = client.voices.design(
-        input="The quick brown fox jumps over the lazy dog.",
-        voice_description="A young woman with a clear, upbeat tone and American accent",
-        language="English",
-    )
-
-    with open("output.wav", "wb") as f:
-        f.write(wav)
-```
-
 ## SSE Event Format
 
-**Audio chunk:**
-```
-data: {"chunk":"<base64 PCM>","chunk_index":0,"sample_rate":24000,"format":"pcm_s16le","first_chunk_latency_ms":450}
+```JSON
+// Audio chunk
+data: {
+  "chunk": "<base64 PCM int16>",
+  "chunk_index": 0,
+  "sample_rate": 24000,
+  "format": "pcm_s16le",
+  "mode": "voicedesign",
+  "first_chunk_latency_ms": 450
+}
+
+// Completion
+data: {
+  "done": true,
+  "total_chunks": 5,
+  "total_time_ms": 2500,
+  "first_chunk_latency_ms": 450,
+  "sample_rate": 24000
+}
 ```
 
-**Completion event:**
-```
-data: {"done":true,"total_chunks":5,"total_time_ms":2500,"first_chunk_latency_ms":450,"sample_rate":24000}
-```
-
-See the [Streaming guide](./streaming.md) for the full field reference and browser playback integration.
+See [SSE Streaming](./streaming.md) for complete integration guide including Web Audio API playback and PCM-to-WAV conversion.
 
 ## Voice Description Best Practices
 
-Good voice descriptions are specific about tone, pace, gender, age, and accent.
+> **💡 Comprehensive Guide Available**
+> For detailed guidance with examples directly from Qwen3-TTS documentation, see our [Crafting Voices Guide](./voice-crafting.md).
 
-### Good Descriptions
+### Effective Descriptions
 
-| Description | Why It Works |
-|-------------|-------------|
-| "A deep, resonant male voice with a slow, deliberate pace and a slight Southern drawl" | Specific about pitch, pace, and accent |
-| "A young woman with a bright, energetic tone, speaking quickly with a London accent" | Covers age, energy, speed, and locale |
-| "A calm, authoritative male narrator in his 50s, like a documentary voiceover" | Uses relatable reference for style |
-| "A warm grandmother reading a bedtime story, soft and gentle with pauses" | Evokes a specific emotional quality |
+- "A wise elderly wizard with a deep, mystical voice. Speaks slowly and deliberately with gravitas."
+- "Professional male CEO voice, confident and authoritative, measured pace"
+- "Warm grandmother voice, gentle and soothing, perfect for bedtime stories"
+- "Excited teenage girl, high-pitched voice with lots of energy"
 
-### Descriptions to Avoid
+### Avoid
 
-| Description | Problem |
-|-------------|---------|
-| "A nice voice" | Too vague -- no actionable characteristics |
-| "Make it sound professional" | "Professional" is subjective and underspecified |
-| "Voice #3 from the other API" | References external systems murmr cannot interpret |
+- Celebrity references — "like Morgan Freeman"
+- Contradictory traits — "high-pitched deep voice"
+- Overly long descriptions (>500 chars)
 
-### Tips
+## Save Voice for Reuse
 
-- **Be specific about gender, age, and accent.** "A 30-year-old British woman" is better than "a female voice."
-- **Describe the voice, not the emotion.** "A deep, gravelly baritone" gives better results than "an angry voice."
-- **Use familiar archetypes.** "Like a late-night radio host" conveys tone, pace, and register effectively.
-- **Keep it under 200 characters.** The API accepts up to 500, but concise descriptions produce more consistent results.
-- **Avoid celebrity references.** "Like Morgan Freeman" does not work.
+Found a voice you love? Save it to ensure consistency across all your content. See the [Voice Management](./voices.md) page for the full API.
 
-## Saving a Designed Voice
+```Workflow
+1. Generate audio with VoiceDesign
+   POST /v1/voices/design → SSE stream with PCM audio
 
-Each Voice Design call generates a unique voice. To reuse the same voice consistently across requests, save it with `voices.save()`. The saved voice ID can then be used with the `/v1/audio/speech` endpoints:
+2. Save the voice (send the audio to the Next.js app)
+   POST /api/v1/voices with the audio → Get voice_abc123
 
-**TypeScript**
-```typescript
-const inputText = 'This is the reference audio for my saved voice.';
-
-const wav = await client.voices.design({
-  input: inputText,
-  voice_description: 'A confident male tech presenter, mid-30s, American',
-});
-
-const saved = await client.voices.save({
-  name: 'Tech Presenter',
-  description: 'Confident male, mid-30s, American, for product demos',
-  audio: wav,
-  ref_text: inputText,
-  language: 'English',
-});
-
-console.log(`Saved as ${saved.id} -- use this ID in future requests`);
+3. Use saved voice in future requests
+   POST /v1/audio/speech with voice: "voice_abc123"
 ```
 
-**Python**
-```python
-text = "This is my reference audio for voice saving."
-description = "A calm, professional female voice with an American accent"
+Saved voice limits by plan: Free (3), Starter (10), Pro (25), Realtime (50), Scale (100)
 
-wav = client.voices.design(
-    input=text,
-    voice_description=description,
-    language="English",
-)
+## Error Responses
 
-saved = client.voices.save(
-    name="Professional Female",
-    audio=wav,
-    description=description,
-    ref_text=text,
-    language="English",
-)
+| Status | Error | Description |
+|--------|-------|-------------|
+| 400 | Bad Request | Missing text or voice_description, text too long (>4096), description too long (>500) |
+| 401 | Unauthorized | Missing or invalid API key |
+| 429 | Quota Exceeded | Character quota or voice design quota exceeded for this billing period |
 
-print(f"Saved voice ID: {saved.id}")
-```
-
-Once saved, use the voice ID with `/v1/audio/speech` for consistent output. See the [Voices guide](./voices.md) for the full voice management workflow.
+See [Error Reference](./errors.md) for all error codes.
 
 ## See Also
 
-- [Speech Generation](./speech.md) -- Generate with saved voices
-- [Voices](./voices.md) -- Save, list, and delete voices
-- [Streaming](./streaming.md) -- SSE format and playback
-- [Languages](./languages.md) -- Supported languages and cross-lingual synthesis
+- [Saved Voices API](./speech.md) — Use saved voices for consistent output
+- [SSE Streaming](./streaming.md) — Deep dive into streaming integration
+- [Audio Formats](./audio-formats.md) — PCM decoding and WAV conversion

@@ -1,149 +1,87 @@
 # Real-time WebSocket
 
-Bidirectional WebSocket API for voice agents and LLM integration with intelligent text buffering. The lowest-latency path for text-to-speech.
+Bidirectional WebSocket API for voice agents and LLM integration with intelligent text buffering.
 
-## When to Use WebSocket vs SSE
+## When to Use WebSocket
+
+### ✓ Ideal For
+
+- Voice agents / assistants
+- LLM streaming output (ChatGPT-style)
+- Real-time translation
+- Interactive phone systems (IVR)
+- Any bidirectional communication
+
+### Consider SSE Instead
+
+- Simple demos / previews
+- One-shot generation
+- Mobile apps (simpler integration)
+- No text buffering needed
+
+## Connection Methods
+
+Choose the right method for your use case:
 
 | Method | Bidirectional | Best For |
-|--------|---------------|----------|
+| --- | --- | --- |
 | HTTP Batch | No | Audiobooks, bulk generation |
-| SSE Streaming | No | Demos, previews, mobile apps |
-| WebSocket | Yes | Voice agents, LLM integration, real-time translation |
+| SSE Streaming | No | Demos, previews, mobile |
+| WebSocket | Yes | Voice agents, LLM integration |
 
-WebSocket uniquely supports intelligent text buffering -- accumulate tokens from an LLM and generate speech at natural sentence boundaries for smoother prosody.
+> **Text Buffering:** WebSocket uniquely supports intelligent text buffering — accumulate tokens from an LLM and generate at natural sentence boundaries for smoother speech.
 
 ## Endpoint
 
-```
-wss://api.murmr.dev/v1/realtime
-```
+`wss://api.murmr.dev/v1/realtime`
 
 After connecting, send a `config` message with your API key within 10 seconds. Time-to-first-chunk is typically ~460ms server-side.
 
-> **Plan requirement:** WebSocket is available on **Realtime** ($49/mo) and **Scale** ($99/mo) plans.
-
-## Connection Lifecycle
-
-1. **Connect** to `wss://api.murmr.dev/v1/realtime`
-2. **Send `config`** with API key and voice settings
-3. **Receive `config_ack`** -- connection is authenticated and ready, you can start sending text
-4. **Send `text` messages** -- server buffers and generates at natural boundaries
-5. **Send `flush`** -- forces generation of remaining buffered text
-6. **Receive `audio` chunks** -- base64 JSON or raw binary PCM (24kHz, 16-bit, mono)
-7. **Receive `done`** -- generation complete for the current utterance
-8. Repeat steps 4-7 for multiple utterances on the same connection
+> **⚠️ Plan Requirement**
+> WebSocket is available on **Realtime** and **Scale** plans. See [Pricing](./pricing.md) for plan details.
 
 ## Quick Example
 
-Connect to the WebSocket, authenticate with a `config` message, send text, and receive PCM audio chunks. The `done` message includes latency metrics:
-
-**TypeScript**
-```typescript
-import WebSocket from 'ws';
-
-const ws = new WebSocket('wss://api.murmr.dev/v1/realtime');
-
-ws.on('open', () => {
-  ws.send(JSON.stringify({
-    type: 'config',
-    api_key: process.env.MURMR_API_KEY,
-    voice_description: 'A warm, friendly voice',
-    language: 'English',
-  }));
-});
-
-ws.on('message', (data, isBinary) => {
-  if (isBinary) {
-    // Binary mode: raw PCM audio
-    const pcm = data as Buffer;
-    return;
-  }
-
-  const msg = JSON.parse(data.toString());
-
-  if (msg.type === 'config_ack') {
-    ws.send(JSON.stringify({ type: 'text', text: 'Hello, world!' }));
-    ws.send(JSON.stringify({ type: 'flush' }));
-  }
-
-  if (msg.type === 'audio') {
-    const pcm = Buffer.from(msg.chunk, 'base64');
-    // PCM: 24kHz, 16-bit signed LE, mono
-  }
-
-  if (msg.type === 'done') {
-    console.log(`TTFC: ${msg.first_chunk_latency_ms}ms`);
-  }
-});
-```
-
-Same flow in Python using the `websockets` library. Audio arrives as either binary frames (in binary mode) or base64-encoded JSON:
-
-**Python**
-```python
-import asyncio
-import base64
-import json
-import os
-import websockets
-
-async def realtime_tts():
-    api_key = os.environ["MURMR_API_KEY"]
-    uri = "wss://api.murmr.dev/v1/realtime"
-
-    async with websockets.connect(uri) as ws:
-        # Configure session
-        await ws.send(json.dumps({
-            "type": "config",
-            "api_key": api_key,
-            "voice_description": "A warm, friendly voice",
-            "language": "English",
-        }))
-
-        ack = json.loads(await ws.recv())
-        assert ack["type"] == "config_ack"
-
-        # Send text and flush
-        await ws.send(json.dumps({"type": "text", "text": "Hello, world!"}))
-        await ws.send(json.dumps({"type": "flush"}))
-
-        # Receive audio chunks
-        pcm_parts = []
-        async for message in ws:
-            if isinstance(message, bytes):
-                pcm_parts.append(message)
-            else:
-                data = json.loads(message)
-                if data["type"] == "audio":
-                    pcm_parts.append(base64.b64decode(data["chunk"]))
-                elif data["type"] == "done":
-                    print(f"TTFC: {data['first_chunk_latency_ms']}ms")
-                    break
-
-        audio = b"".join(pcm_parts)
-
-asyncio.run(realtime_tts())
-```
+Basic WebSocket flow with VoiceDesign:
 
 ## Key Features
 
-- **Text Buffering** -- Smart sentence boundary detection for natural prosody
-- **Binary Mode** -- Raw PCM frames for ~50ms lower latency per chunk
-- **Session Auth** -- `config_ack` confirms the connection is authenticated and ready
-- **Multiple Generations** -- One connection supports multiple text-to-audio cycles
+Text Buffering
+
+Smart sentence boundary detection
+
+Binary Mode
+
+Raw PCM for lower latency
+
+API Key Caching
+
+Faster auth after first request
+
+Low Latency
+
+Fast time-to-first-chunk
+
+## Learn More
+
+[WebSocket Protocol Message types and connection flow](./websocket-protocol.md)
+
+[JavaScript Client Vanilla JS examples with Web Audio playback](./installation.md)
+
+[SSE Streaming Simpler alternative for one-shot generation](./streaming.md)
 
 ## Rate Limits
 
-| Limit | Value |
-|-------|-------|
-| Concurrent WebSocket connections | 10 per API key |
-| Generations per minute | 100 per API key |
-| Global connections | 500 total (server-wide) |
+WebSocket connections are subject to these limits:
 
-Character usage on WebSocket counts against your plan's monthly character quota.
+10
 
-## See Also
+Concurrent connections per API key
 
-- [WebSocket Protocol](./websocket-protocol.md) -- Full message type reference, close codes
-- [Browser Client](./browser-client.md) -- Web Audio playback, React hook, LLM integration
-- [Voice Agents](./voice-agents.md) -- Building conversational voice agents
+100
+
+Generations per minute per key
+
+Plan
+
+Character usage counts against quota

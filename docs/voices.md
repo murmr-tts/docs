@@ -1,369 +1,246 @@
 # Voice Management
 
-Save voices for consistent, repeatable speech generation. A saved voice captures the vocal characteristics from a Voice Design generation so you can reuse the same voice across requests without re-describing it.
+Save voices from VoiceDesign for guaranteed consistency. List and manage your saved voice library.
 
-## Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/v1/voices` | GET | List all saved voices |
-| `/v1/voices` | POST | Save a new voice |
-| `/v1/voices/{voice_id}` | DELETE | Delete a saved voice |
-| `/v1/voices/extract-embeddings` | POST | Extract portable embeddings from audio |
-
-## Workflow
-
-1. Generate audio with [VoiceDesign](./voicedesign.md)
-2. Save the voice with `POST /v1/voices`
-3. Use the voice ID with [/v1/audio/speech](./speech.md)
-
-## Save a Voice
+> **💡 Workflow**
+> 1. Generate audio with [VoiceDesign](./voicedesign.md)
+> 2. Save the voice with `POST /v1/voices`
+> 3. Use the voice ID with [/v1/audio/speech](./speech.md)
 
 `POST /v1/voices`
 
-Saving a voice requires reference audio (a WAV buffer from a Voice Design call) and its transcript. The API extracts voice embeddings from the audio server-side.
+## Save a Voice
 
-### Parameters
+Extract voice embeddings from VoiceDesign audio and save for future use. Requires API key authentication.
+
+### Request Parameters
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `name` | string | Yes | -- | Display name (1-50 characters) |
-| `audio` | string | Yes | -- | Base64-encoded WAV audio. SDKs accept binary and encode automatically. |
-| `description` | string | Yes | -- | Description of the voice for your reference |
-| `ref_text` | string | Yes | -- | Transcript of the reference audio. Improves embedding quality. |
-| `language` | string | No | `English` | Language name |
+| `name` | string | Yes | -- | Display name for the voice (1-50 characters) |
+| `audio` | string | Yes | -- | Base64-encoded WAV audio from VoiceDesign generation |
+| `description` | string | Yes | -- | Original voice description (stored for reference) |
+| `language` | string | No | English | Language of the voice (e.g., "English", "Spanish", "Japanese") |
 
-Save a voice using curl by base64-encoding the reference WAV file and sending it with the transcript. The API extracts voice embeddings server-side:
+**cURL**
 
-**curl**
-```bash
-# First, generate audio with VoiceDesign and save the WAV file
-# Then base64 encode it
+```curl
+# First, generate audio with VoiceDesign
+curl -X POST "https://api.murmr.dev/v1/voices/design" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{"text": "Sample", "voice_description": "A warm voice", "language": "English"}' \
+  > stream_output.txt
+
+# Collect PCM from SSE, convert to WAV, then base64 encode
+# (The SDK handles this automatically)
 AUDIO_B64=$(base64 -i sample.wav)
 
+# Save the voice
 curl -X POST "https://api.murmr.dev/v1/voices" \
-  -H "Authorization: Bearer $MURMR_API_KEY" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d "{
     \"name\": \"My Narrator\",
     \"description\": \"A warm, professional voice\",
-    \"audio\": \"$AUDIO_B64\",
-    \"ref_text\": \"Sample audio text here.\",
-    \"language\": \"English\"
+    \"audio\": \"$AUDIO_B64\"
   }"
 ```
 
-Two-step workflow with the Node.js SDK: generate reference audio with Voice Design, then save it. The `ref_text` must match the spoken audio for accurate embedding extraction:
+**Python**
 
-**TypeScript**
-```typescript
-import { MurmrClient } from '@murmr/sdk';
-
-const client = new MurmrClient({
-  apiKey: process.env.MURMR_API_KEY!,
-});
-
-// Generate reference audio
-const inputText = 'This is the reference recording for my new voice.';
-const wav = await client.voices.design({
-  input: inputText,
-  voice_description: 'A soothing female narrator, mid-30s, neutral American accent',
-});
-
-// Save the voice
-const saved = await client.voices.save({
-  name: 'Soothing Narrator',
-  description: 'Female narrator, mid-30s, neutral American, for audiobooks',
-  audio: wav,
-  ref_text: inputText,
-  language: 'English',
-});
-
-console.log(`ID: ${saved.id}`);
-console.log(`Embedding size: ${saved.prompt_size_bytes} bytes`);
-```
-
-Same workflow in Python. The SDK accepts raw `bytes` for the `audio` parameter and handles base64 encoding automatically:
-
-**Python (sync)**
 ```python
-import os
 from murmr import MurmrClient
 
-with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-    text = "This is my reference sample for voice extraction."
-    description = "A warm, confident male voice with a slight rasp"
+client = MurmrClient(api_key="YOUR_API_KEY")
 
-    wav = client.voices.design(
-        input=text,
-        voice_description=description,
-        language="English",
-    )
+# 1. Generate audio with VoiceDesign
+wav = client.voices.design(
+    input="Sample audio for voice extraction",
+    voice_description="A warm, professional voice",
+    language="English",
+)
 
-    saved = client.voices.save(
-        name="Confident Male",
-        audio=wav,
-        description=description,
-        ref_text=text,
-        language="English",
-    )
+# 2. Save the voice for reuse
+voice = client.voices.save(
+    name="My Narrator",
+    audio=wav,
+    description="A warm, professional voice",
+)
+print(f"Saved as: {voice.id}")  # voice_abc123def456
 
-    print(f"Voice ID: {saved.id}")
-    print(f"Prompt size: {saved.prompt_size_bytes} bytes")
+# 3. Use the saved voice
+job = client.speech.create(input="Hello!", voice=voice.id)
 ```
 
-**Python (async)**
-```python
-import asyncio
-import os
-from murmr import AsyncMurmrClient
+**JavaScript (SDK)**
 
-async def main():
-    async with AsyncMurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-        text = "This is my reference sample for voice extraction."
-        description = "A warm, confident male voice with a slight rasp"
+```javascript
+import { MurmrClient } from "@murmr/sdk";
 
-        wav = await client.voices.design(
-            input=text,
-            voice_description=description,
-        )
+const client = new MurmrClient({ apiKey: "YOUR_API_KEY" });
 
-        saved = await client.voices.save(
-            name="Confident Male",
-            audio=wav,
-            description=description,
-            ref_text=text,
-        )
+// 1. Generate audio with VoiceDesign
+const wav = await client.voices.design({
+  input: "Sample audio for voice extraction",
+  voice_description: "A warm, professional voice",
+});
 
-        print(f"Voice ID: {saved.id}")
+// 2. Save the voice for reuse
+const voice = await client.voices.save({
+  name: "My Narrator",
+  audio: wav,
+  description: "A warm, professional voice",
+});
 
-asyncio.run(main())
+console.log(`Saved as: ${voice.id}`);  // voice_abc123def456
 ```
 
-### Save Response
+### Response
 
-A successful save returns the new voice ID, embedding size, and a confirmation. Use the `id` field in subsequent TTS requests:
-
-```json
+```JSON
 {
-  "id": "voice_a1b2c3d4e5f6",
-  "name": "Soothing Narrator",
+  "id": "voice_abc123def456",
+  "name": "My Narrator",
+  "description": "A warm, professional voice",
   "language": "English",
-  "description": "Female narrator, mid-30s, neutral American, for audiobooks",
-  "prompt_size_bytes": 142380,
-  "created_at": "2026-03-01T12:00:00Z",
+  "prompt_size_bytes": 51200,
+  "created_at": "2025-01-29T12:00:00Z",
   "success": true,
   "has_audio_preview": true
 }
 ```
 
-## List Saved Voices
-
 `GET /v1/voices`
 
-Returns all saved voices for your account along with plan limits.
+## List Saved Voices
 
-List all saved voices with curl. Returns an array of voice metadata plus your plan's saved voice limits:
+Retrieve all voices saved to your account. Requires API key authentication.
 
-**curl**
-```bash
+```cURL
 curl "https://api.murmr.dev/v1/voices" \
-  -H "Authorization: Bearer $MURMR_API_KEY"
+  -H "Authorization: Bearer YOUR_API_KEY"
 ```
-
-Check how many voice slots you've used and iterate over saved voices:
-
-**TypeScript**
-```typescript
-const { voices, saved_count, saved_limit } = await client.voices.list();
-
-console.log(`Using ${saved_count}/${saved_limit} voice slots`);
-for (const voice of voices) {
-  console.log(`${voice.id}: ${voice.name} (${voice.language})`);
-}
-```
-
-**Python**
-```python
-response = client.voices.list_voices()
-
-print(f"Saved: {response.saved_count}/{response.saved_limit}")
-for voice in response.voices:
-    print(f"  {voice.id}: {voice.name} ({voice.language})")
-```
-
-### List Response
-
-```json
-{
-  "voices": [
-    {
-      "id": "voice_a1b2c3d4e5f6",
-      "name": "Soothing Narrator",
-      "description": "Female narrator, mid-30s, neutral American, for audiobooks",
-      "language": "English",
-      "language_name": "English",
-      "audio_preview_url": "https://...",
-      "created_at": "2026-03-01T12:00:00Z"
-    }
-  ],
-  "saved_count": 1,
-  "saved_limit": 10,
-  "total": 1
-}
-```
-
-## Delete a Voice
-
-`DELETE /v1/voices/:id`
-
-Permanently deletes a saved voice.
-
-Delete a voice by ID. This is permanent and frees one slot toward your plan's limit:
-
-**curl**
-```bash
-curl -X DELETE "https://api.murmr.dev/v1/voices/voice_a1b2c3d4e5f6" \
-  -H "Authorization: Bearer $MURMR_API_KEY"
-```
-
-**TypeScript**
-```typescript
-const result = await client.voices.delete('voice_a1b2c3d4e5f6');
-console.log(result.message); // "Voice deleted successfully"
-```
-
-**Python**
-```python
-result = client.voices.delete("voice_a1b2c3d4e5f6")
-print(f"Deleted: {result.success}")
-```
-
-### Delete Response
-
-```json
-{
-  "success": true,
-  "id": "voice_a1b2c3d4e5f6",
-  "message": "Voice \"Soothing Narrator\" deleted"
-}
-```
-
-## Extract Embeddings
-
-`POST /v1/voices/extract-embeddings`
-
-Extract portable voice embeddings from audio without saving the voice. The returned `prompt_data` can be stored in your own database and passed as `voice_clone_prompt` in any TTS request -- no saved voice ID needed, and it does not count against your saved voice limit.
-
-### Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `audio` | string | Yes | Base64-encoded WAV audio. SDKs accept binary. |
-| `ref_text` | string | Yes | Transcript of the reference audio. Required for accurate embedding extraction. |
 
 ### Response
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `prompt_data` | string | Base64-encoded voice embedding data. Pass this as `voice_clone_prompt` in TTS requests. |
-| `prompt_size_bytes` | number | Size of the embedding data in bytes (typically 50-200KB). |
+```JSON
+{
+  "voices": [
+    {
+      "id": "voice_abc123def456",
+      "name": "My Narrator",
+      "description": "A warm, professional voice",
+      "language": "English",
+      "language_name": "English",
+      "audio_preview_url": "https://...",
+      "created_at": "2025-01-29T12:00:00Z"
+    },
+    {
+      "id": "voice_xyz789ghi012",
+      "name": "Customer Support",
+      "description": "Friendly and helpful",
+      "language": "English",
+      "language_name": "English",
+      "audio_preview_url": null,
+      "created_at": "2025-01-28T10:30:00Z"
+    }
+  ],
+  "saved_count": 2,
+  "saved_limit": 10,
+  "total": 2
+}
+```
 
-Extract embeddings from reference audio via curl. Send base64-encoded WAV audio and the transcript:
+The `saved_limit` varies by plan. See limits below.
 
-**curl**
-```bash
+`DELETE /v1/voices/:id`
+
+## Delete a Voice
+
+Permanently delete a saved voice from your account. Requires API key authentication.
+
+```cURL
+curl -X DELETE "https://api.murmr.dev/v1/voices/voice_abc123def456" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+### Response
+
+```JSON
+{
+  "success": true,
+  "id": "voice_abc123def456",
+  "message": "Voice \"My Narrator\" deleted"
+}
+```
+
+`POST /v1/voices/extract-embeddings`
+
+## Extract Embeddings
+
+Extract voice embeddings from audio. This endpoint goes through the Worker at `api.murmr.dev` and uses API key auth.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `audio` | string | Yes | -- | Base64-encoded WAV audio to extract embeddings from |
+| `model` | string | No | base | Model to use: "base" (default) or "base_06b" |
+
+```cURL
 curl -X POST "https://api.murmr.dev/v1/voices/extract-embeddings" \
-  -H "Authorization: Bearer $MURMR_API_KEY" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"audio": "<base64-wav>", "ref_text": "Transcript of the audio."}'
+  -d '{"audio": "<base64-wav>"}'
 ```
-
-Extract embeddings with the Node.js SDK and use them inline for TTS. The `voice` parameter is required but ignored when `voice_clone_prompt` is provided:
-
-**TypeScript**
-```typescript
-import { MurmrClient } from '@murmr/sdk';
-import { readFileSync } from 'node:fs';
-
-const client = new MurmrClient({
-  apiKey: process.env.MURMR_API_KEY!,
-});
-
-const audioBuffer = readFileSync('reference.wav');
-
-const { prompt_data, prompt_size_bytes } = await client.voices.extractEmbeddings({
-  audio: audioBuffer,
-  ref_text: 'The transcript of the reference audio goes here.',
-});
-
-console.log(`Embedding size: ${prompt_size_bytes} bytes`);
-
-// Store prompt_data in your database, then use it in requests:
-const stream = await client.speech.stream({
-  input: 'Generate speech with the extracted embedding.',
-  voice: 'unused', // Required field, but voice_clone_prompt takes precedence
-  voice_clone_prompt: prompt_data,
-});
-```
-
-Extract embeddings in Python, then use them directly in a TTS request without saving the voice. This avoids counting against your saved voice limit:
-
-**Python**
-```python
-import os
-from murmr import MurmrClient
-
-with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-    text = "A sample for embedding extraction."
-    wav = client.voices.design(
-        input=text,
-        voice_description="A clear female voice",
-    )
-
-    embeddings = client.voices.extract_embeddings(
-        audio=wav,
-        ref_text=text,
-    )
-
-    print(f"Prompt size: {embeddings.prompt_size_bytes} bytes")
-
-    # Use embeddings directly (no saved voice needed)
-    result = client.speech.create_and_wait(
-        input="Using extracted embeddings for voice cloning.",
-        voice="unused",
-        voice_clone_prompt=embeddings.prompt_data,
-    )
-```
-
-> **When to use embeddings vs saved voices:** Use saved voices when you want murmr to store and manage the voice. Use extracted embeddings when you need to store voice data in your own system (e.g., multi-tenant apps), or when you want to avoid the saved voice limit on your plan.
-
-## Voice Limits by Plan
-
-| Plan | Saved Voice Limit |
-|------|-------------------|
-| Free | 3 |
-| Starter | 10 |
-| Pro | 25 |
-| Realtime | 50 |
-| Scale | 100 |
-
-Attempting to save a voice beyond your limit returns an error. Delete unused voices or upgrade your plan to increase the limit.
 
 ## Voice ID Format
 
 Voice IDs follow the pattern `voice_` followed by a unique identifier:
 
-```
+```Example
 voice_abc123def456
 voice_xyz789ghi012
 ```
 
 Voice IDs are case-sensitive and must be used exactly as returned from the API.
 
+## Saved Voice Limits
+
+The number of voices you can save depends on your plan:
+
+Plan
+
+Saved Voices
+
+Free
+
+3
+
+Starter
+
+10
+
+Pro
+
+25
+
+Realtime
+
+50
+
+Scale
+
+100
+
+## Error Responses
+
+| Status | Error | Description |
+|--------|-------|-------------|
+| 400 | Bad Request | Missing name or audio, invalid base64 encoding |
+| 404 | Not Found | Voice ID doesn't exist or doesn't belong to your account |
+| 409 | Conflict | Saved voice limit reached for your plan |
+
 ## See Also
 
-- [Voice Design](./voicedesign.md) -- Natural language voice descriptions
-- [Speech Generation](./speech.md) -- Using saved voices in TTS requests
-- [Authentication](./authentication.md) -- Plan limits and API keys
-- [Rate Limits](./rate-limits.md) -- Voice save limits by plan
+- [VoiceDesign API](./voicedesign.md) — Create voices from descriptions
+- [Saved Voices API](./speech.md) — Generate audio with saved voices
+- [Pricing & Usage](./pricing.md) — Plan limits and quotas

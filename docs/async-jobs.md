@@ -1,30 +1,37 @@
 # Async Jobs
 
-Submit batch TTS jobs, poll for results, and receive webhook notifications when audio is ready. Ideal for background processing and server-to-server workflows.
+All batch TTS requests are processed asynchronously. Submit a job, get a job ID, then poll for the audio result or receive it via webhook.
+
+> **ℹ️ Always Async**
+> The batch endpoint `POST /v1/audio/speech` always returns `202 Accepted` with a job ID — it never returns audio directly. Use `GET /v1/jobs/{jobId}` to retrieve the audio when the job completes. For real-time playback, use the [streaming endpoint](./speech.md) instead.
 
 ## How It Works
 
-1. **Submit** -- `POST /v1/audio/speech` with a `webhook_url` returns `202 Accepted` with a job ID. Without `webhook_url`, the endpoint returns HTTP 200 with binary audio directly (synchronous mode).
-2. **Process** -- The job runs on GPU workers. Status progresses: `queued` -> `processing` -> `completed` or `failed`
-3. **Retrieve** -- Poll `GET /v1/jobs/{jobId}` for the audio, or receive it via webhook
+1
 
-## Job Statuses
+Submit a batch request
 
-| Status | Description |
-|--------|-------------|
-| `queued` | Job is waiting for an available GPU worker |
-| `processing` | GPU worker is generating audio |
-| `completed` | Audio generated -- poll to download, or check webhook |
-| `failed` | Job failed -- check the `error` field for details |
+`POST /v1/audio/speech` returns `202` immediately with a job ID like `job_a1b2c3d4e5f6g7h8`.
+
+2
+
+Job processes on GPU
+
+The job enters the RunPod queue. Status progresses: `queued` -> `processing` -> `completed` or `failed`.
+
+3
+
+Retrieve the audio
+
+Poll `GET /v1/jobs/{jobId}` — returns **binary audio** when complete. Optionally add `webhook_url` to receive the result via POST.
 
 ## Submitting a Job
 
-Submit a batch TTS job. Without `webhook_url`, the API returns synchronous audio (HTTP 200). With `webhook_url`, it returns a job ID (HTTP 202) for async processing:
+**cURL**
 
-**curl**
-```bash
+```curl
 curl -X POST "https://api.murmr.dev/v1/audio/speech" \
-  -H "Authorization: Bearer $MURMR_API_KEY" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "text": "A long article to convert to speech...",
@@ -35,181 +42,228 @@ curl -X POST "https://api.murmr.dev/v1/audio/speech" \
 # {"id": "job_a1b2c3d4e5f6g7h8", "status": "queued", "created_at": "..."}
 ```
 
-Submit a job with `webhook_url` to receive results asynchronously. Use `isAsyncResponse()` to type-narrow the result:
+**Python**
 
-**TypeScript**
-```typescript
-import { MurmrClient, isAsyncResponse } from '@murmr/sdk';
+```python
+import requests
 
-const client = new MurmrClient({ apiKey: process.env.MURMR_API_KEY! });
+response = requests.post(
+    "https://api.murmr.dev/v1/audio/speech",
+    headers={"Authorization": "Bearer YOUR_API_KEY"},
+    json={
+        "text": "A long article to convert to speech...",
+        "voice": "voice_abc123",
+        "response_format": "mp3"
+    }
+)
 
-const result = await client.speech.create({
-  input: 'Generate this audio asynchronously.',
-  voice: 'voice_abc123',
-  response_format: 'mp3',
-  webhook_url: 'https://yourapp.com/webhooks/tts',
+job = response.json()
+print(f"Job submitted: {job['id']}")
+# {"id": "job_a1b2c3d4e5f6g7h8", "status": "queued", "created_at": "..."}
+```
+
+**JavaScript**
+
+```javascript
+const response = await fetch("https://api.murmr.dev/v1/audio/speech", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer YOUR_API_KEY",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    text: "A long article to convert to speech...",
+    voice: "voice_abc123",
+    response_format: "mp3"
+  })
 });
 
-if (isAsyncResponse(result)) {
-  console.log(`Job ID: ${result.id}`);
-  console.log(`Status: ${result.status}`);  // "queued"
+const job = await response.json();
+// { id: "job_a1b2c3d4e5f6g7h8", status: "queued", created_at: "..." }
+```
+
+Optionally add `webhook_url` to receive the completed audio via POST to your server. See [Webhook Delivery](#webhook-delivery) below.
+
+## Submit Response
+
+202 Accepted
+
+application/json
+
+```JSON
+{
+  "id": "job_a1b2c3d4e5f6g7h8",
+  "status": "queued",
+  "created_at": "2026-02-13T10:30:00.000Z"
 }
 ```
 
-**Python**
-```python
-import os
-from murmr import MurmrClient
-
-with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-    job = client.speech.create(
-        input="A long article to convert to speech...",
-        voice="voice_abc123",
-        response_format="mp3",
-        webhook_url="https://yourapp.com/webhooks/tts",
-    )
-
-    print(f"Job ID: {job.id}")
-    print(f"Status: {job.status}")  # "queued"
-```
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | string | Yes | Unique job identifier (job_ + 16 hex chars). Use this to poll for status. |
+| `status` | string | Yes | Always "queued" on submission. |
+| `created_at` | string | Yes | ISO 8601 timestamp of when the job was submitted. |
 
 ## Polling for Results
 
-`GET /v1/jobs/{jobId}` returns the current job status. When the job is completed, it returns binary audio directly.
+`GET /v1/jobs/{jobId}`
 
-Poll for a job's status with curl. Completed jobs return binary audio directly; in-progress jobs return JSON with status:
+Returns current job status. Requires the same API key used to submit the job. Only the job owner can access their jobs.
 
-**curl**
-```bash
-# Poll for status
-curl -s "https://api.murmr.dev/v1/jobs/$JOB_ID" \
-  -H "Authorization: Bearer $MURMR_API_KEY"
+> **ℹ️ Response varies by status**
+> - **In progress:** Returns JSON with `status` field
+> - **Completed:** Returns **binary audio** (Content-Type: audio/*) — save directly to file
+> - **Failed:** Returns JSON with `error` field
+> - **Expired:** Returns `410 Gone` if audio has been purged
 
-# When completed: returns binary audio (Content-Type: audio/*)
-# When in progress: returns JSON with status
-# When failed: returns JSON with error
-# When expired: returns 410 Gone
+### In-Progress Response
+
+```JSON
+{
+  "id": "job_a1b2c3d4e5f6g7h8",
+  "status": "processing",
+  "created_at": "2026-02-13T10:30:00.000Z"
+}
 ```
 
-Three polling strategies in TypeScript: manual single poll, automatic wait-for-completion, or the all-in-one `createAndWait`:
+### Completed Response
 
-**TypeScript**
-```typescript
-import { MurmrClient, MurmrError } from '@murmr/sdk';
-import { writeFileSync } from 'fs';
+- **200 OK — audio/mpeg (or requested format):** Binary audio data. Check the `Content-Type` header to determine the format. Response headers include `X-Audio-Duration-Ms` and `X-Total-Time-Ms`.
 
-const client = new MurmrClient({ apiKey: process.env.MURMR_API_KEY! });
+### Failed Response
 
-// Option 1: Manual polling
-const status = await client.jobs.get('job_a1b2c3d4e5f6g7h8');
-
-if (status.status === 'completed' && status.audio_base64) {
-  const audio = Buffer.from(status.audio_base64, 'base64');
-  writeFileSync(`output.${status.response_format || 'wav'}`, audio);
+```JSON
+{
+  "id": "job_a1b2c3d4e5f6g7h8",
+  "status": "failed",
+  "error": "Voice not found: voice_invalid",
+  "created_at": "2026-02-13T10:30:00.000Z"
 }
-
-// Option 2: Wait for completion (polls automatically)
-try {
-  const result = await client.jobs.waitForCompletion('job_a1b2c3d4e5f6g7h8', {
-    pollIntervalMs: 3000,
-    timeoutMs: 900_000,
-    onPoll: (status) => console.log(`Status: ${status.status}`),
-  });
-
-  if (result.audio_base64) {
-    writeFileSync('output.wav', Buffer.from(result.audio_base64, 'base64'));
-  }
-} catch (error) {
-  if (error instanceof MurmrError && error.code === 'JOB_FAILED') {
-    console.error('Job failed:', error.message);
-  }
-}
-
-// Option 3: Submit and wait in one call
-const final = await client.speech.createAndWait({
-  input: 'Submit and wait in one call.',
-  voice: 'voice_abc123',
-  response_format: 'mp3',
-});
 ```
 
-**Python (sync)**
+## Polling Example
+
+**Python**
+
 ```python
-import os
-from murmr import MurmrClient, MurmrError
+import time
+import requests
 
-with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-    # Option 1: Manual polling
-    status = client.jobs.get("job_a1b2c3d4e5f6g7h8")
+API_KEY = "YOUR_API_KEY"
+BASE_URL = "https://api.murmr.dev"
 
-    if status.status == "completed":
-        with open("output.mp3", "wb") as f:
-            f.write(status.audio_bytes)
+# 1. Submit job
+resp = requests.post(
+    f"{BASE_URL}/v1/audio/speech",
+    headers={"Authorization": f"Bearer {API_KEY}"},
+    json={
+        "text": "Long text to synthesize...",
+        "voice": "voice_abc123",
+        "response_format": "mp3"
+    }
+)
+job = resp.json()
+job_id = job["id"]
+print(f"Submitted: {job_id}")
 
-    # Option 2: Wait for completion
-    try:
-        result = client.jobs.wait_for_completion(
-            "job_a1b2c3d4e5f6g7h8",
-            poll_interval_s=3.0,
-            timeout_s=120.0,
-            on_poll=lambda s: print(f"Polling: {s.status}"),
-        )
-        with open("output.mp3", "wb") as f:
-            f.write(result.audio_bytes)
-    except MurmrError as e:
-        if e.code == "JOB_FAILED":
-            print(f"Job failed: {e.message}")
-
-    # Option 3: Submit and wait in one call
-    result = client.speech.create_and_wait(
-        input="Submit and wait in one call.",
-        voice="voice_abc123",
-        response_format="mp3",
+# 2. Poll for completion
+while True:
+    poll = requests.get(
+        f"{BASE_URL}/v1/jobs/{job_id}",
+        headers={"Authorization": f"Bearer {API_KEY}"}
     )
+
+    # Completed: binary audio returned
+    content_type = poll.headers.get("Content-Type", "")
+    if content_type.startswith("audio/"):
+        ext = "mp3" if "mpeg" in content_type else content_type.split("/")[-1]
+        filename = f"{job_id}.{ext}"
+        with open(filename, "wb") as f:
+            f.write(poll.content)
+        duration = poll.headers.get("X-Audio-Duration-Ms", "?")
+        print(f"Saved {filename} ({duration}ms audio)")
+        break
+
+    # Still in progress or failed
+    data = poll.json()
+    if data["status"] == "failed":
+        print(f"Failed: {data.get('error')}")
+        break
+
+    print(f"Status: {data['status']}...")
+    time.sleep(3)
 ```
 
-**Python (async)**
-```python
-import asyncio
-import os
-from murmr import AsyncMurmrClient
+**JavaScript**
 
-async def main():
-    async with AsyncMurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-        job = await client.speech.create(
-            input="Async job submission.",
-            voice="voice_abc123",
-            response_format="opus",
-            webhook_url="https://yourapp.com/webhooks/tts",
-        )
+```javascript
+const API_KEY = "YOUR_API_KEY";
+const BASE_URL = "https://api.murmr.dev";
 
-        result = await client.jobs.wait_for_completion(
-            job.id,
-            poll_interval_s=2.0,
-        )
+// 1. Submit job
+const submitResp = await fetch(`${BASE_URL}/v1/audio/speech`, {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${API_KEY}`,
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    text: "Long text to synthesize...",
+    voice: "voice_abc123",
+    response_format: "mp3"
+  })
+});
+const job = await submitResp.json();
 
-        with open("output.opus", "wb") as f:
-            f.write(result.audio_bytes)
+// 2. Poll for completion
+async function pollJob(jobId) {
+  while (true) {
+    const resp = await fetch(`${BASE_URL}/v1/jobs/${jobId}`, {
+      headers: { "Authorization": `Bearer ${API_KEY}` }
+    });
 
-asyncio.run(main())
+    const ct = resp.headers.get("Content-Type") || "";
+
+    // Completed: binary audio
+    if (ct.startsWith("audio/")) {
+      return await resp.blob();
+    }
+
+    // In progress or failed
+    const data = await resp.json();
+    if (data.status === "failed") throw new Error(data.error);
+
+    await new Promise(r => setTimeout(r, 3000));
+  }
+}
+
+const audioBlob = await pollJob(job.id);
+const audio = new Audio(URL.createObjectURL(audioBlob));
+audio.play();
 ```
+
+> **💡 Polling Best Practice**
+> Poll every 3-5 seconds. Job metadata expires after 24 hours. Audio data on the backend may be purged sooner — retrieve promptly after completion to avoid a `410 Gone` response.
 
 ## Webhook Delivery
 
 Add `webhook_url` to your request to receive the audio via POST when the job completes. Polling still works as a fallback.
 
-### Requirements
-
-- URL must use **HTTPS** (HTTP is rejected)
-- URL must be publicly accessible (no private IPs or localhost)
-- Your endpoint must return a 2xx status within 10 seconds
-- Max URL length: 2,048 characters
+```cURL
+curl -X POST "https://api.murmr.dev/v1/audio/speech" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Text to synthesize...",
+    "voice": "voice_abc123",
+    "response_format": "mp3",
+    "webhook_url": "https://your-server.com/webhooks/tts"
+  }'
+```
 
 ### Success Payload
 
-When the job completes, your webhook receives a POST with base64-encoded audio and metadata:
-
-```json
+```JSON
 {
   "id": "job_a1b2c3d4e5f6g7h8",
   "status": "completed",
@@ -223,9 +277,7 @@ When the job completes, your webhook receives a POST with base64-encoded audio a
 
 ### Failure Payload
 
-If the job fails, the webhook payload includes the error message. Check `status === "failed"` and read the `error` field:
-
-```json
+```JSON
 {
   "id": "job_a1b2c3d4e5f6g7h8",
   "status": "failed",
@@ -233,37 +285,10 @@ If the job fails, the webhook payload includes the error message. Check `status 
 }
 ```
 
-### Webhook Handler
-
-Receive webhook deliveries in your backend. Decode the base64 audio and save it. Set a large JSON body limit (50MB+) since audio payloads can be substantial:
-
-**TypeScript (Express)**
-```typescript
-import express from 'express';
-import { writeFile } from 'fs/promises';
-
-const app = express();
-app.use(express.json({ limit: '50mb' }));
-
-app.post('/webhooks/tts', async (req, res) => {
-  const payload = req.body;
-
-  if (payload.status === 'completed') {
-    const audioBuffer = Buffer.from(payload.audio, 'base64');
-    const filename = `${payload.id}.${payload.response_format}`;
-    await writeFile(filename, audioBuffer);
-    console.log(`Saved ${filename} (${payload.duration_ms}ms audio)`);
-  } else {
-    console.error(`Job failed: ${payload.error}`);
-  }
-
-  res.sendStatus(200);
-});
-```
-
-Same webhook handler in Python using Flask. Decode the base64 audio payload and write it to disk:
+### Webhook Handler Example
 
 **Python (Flask)**
+
 ```python
 import base64
 from flask import Flask, request
@@ -288,11 +313,72 @@ def handle_tts_webhook():
     return "OK", 200
 ```
 
-## Job Expiration
+**Node.js (Express)**
 
-Job metadata expires after **24 hours**. Audio data on the backend may be purged sooner. Retrieve completed audio promptly to avoid a `410 Gone` response.
+```javascript
+import express from "express";
+import { writeFile } from "fs/promises";
+
+const app = express();
+app.use(express.json({ limit: "50mb" }));
+
+app.post("/webhooks/tts", async (req, res) => {
+  const payload = req.body;
+
+  if (payload.status === "completed") {
+    const audioBuffer = Buffer.from(payload.audio, "base64");
+    const filename = `${payload.id}.${payload.response_format}`;
+
+    await writeFile(filename, audioBuffer);
+    console.log(`Saved ${filename} (${payload.duration_ms}ms audio)`);
+  } else {
+    console.error(`Job failed: ${payload.error}`);
+  }
+
+  res.sendStatus(200);
+});
+```
+
+> **⚠️ Webhook Requirements**
+> - **HTTPS only** — webhook_url must use HTTPS protocol
+> - **Max URL length** — 2,048 characters
+> - **No private IPs** — localhost, 127.0.0.1, 10.x, 172.16-31.x, 192.168.x are blocked
+> - **No internal domains** — murmr.dev subdomains are blocked
+> - **Payload size** — audio is base64-encoded (~1.33x raw file size). Set your server's body size limit accordingly.
+
+## Job ID Format
+
+Job IDs follow the pattern `job_` followed by 16 hexadecimal characters:
+
+```Regex
+/^job_[a-f0-9]{16}$/
+
+Example: job_a1b2c3d4e5f6g7h8
+```
+
+## Job Status Values
+
+| Status | Description |
+| --- | --- |
+| queued | Job is waiting for an available GPU worker |
+| processing | GPU worker is generating audio |
+| completed | Audio generated — poll to download, or check webhook |
+| failed | Job failed — check the error field for details |
+
+Job metadata expires after **24 hours**. Audio data on the backend may be purged sooner. Retrieve completed audio promptly.
+
+## Error Responses
+
+| Status | Error | Description |
+|--------|-------|-------------|
+| 400 | Bad Request | Invalid webhook_url (not HTTPS, private IP, too long), invalid response_format, missing text |
+| 404 | Not Found | Job ID not found, expired (24h TTL), or belongs to a different account |
+| 410 | Gone | Job completed but audio data has been purged from the backend. Re-submit the job. |
+| 429 | Server Busy | GPU queue is full. Check the `Retry-After` header. |
+| 503 | Service Unavailable | Batch processing is temporarily unavailable |
 
 ## See Also
 
-- [Long-Form Audio](./long-form.md) -- Generate audio from text of any length
-- [Portable Embeddings](./portable-embeddings.md) -- Store and reuse voice embeddings
+- [Saved Voices API](./speech.md) — Batch and streaming TTS endpoints
+- [Audio Formats](./audio-formats.md) — Supported response_format values
+- [Error Reference](./errors.md) — Complete error handling guide

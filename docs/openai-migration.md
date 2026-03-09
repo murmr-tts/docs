@@ -1,293 +1,200 @@
-# OpenAI Migration Guide
+# OpenAI Compatibility
 
-murmr is designed as a drop-in replacement for OpenAI's TTS API. Migrate with minimal code changes and gain access to natural voice descriptions, 10 languages, and lower cost per character.
-
-## What Changes
-
-| | OpenAI | murmr |
-|---|---|---|
-| Base URL | `https://api.openai.com/v1` | `https://api.murmr.dev` |
-| API key | `sk-...` | `murmr_sk_live_...` |
-| Model | `tts-1` or `tts-1-hd` | Not needed (single model) |
-| Voice | 6 fixed names (`alloy`, `echo`, etc.) | Unlimited custom voices via description or saved IDs |
-
-## What Stays the Same
-
-- Endpoint path: `/v1/audio/speech`
-- Auth header: `Authorization: Bearer <key>`
-- Audio formats: `mp3`, `opus`, `aac`, `flac`, `wav`, `pcm`
-- `input` / `text` field name (both accepted)
-- Max 4,096 characters per request
+murmr is designed as a drop-in replacement for the OpenAI TTS API. Migrate your existing code with minimal changes and unlock powerful new features.
 
 ## Quick Migration
 
-### Before (OpenAI)
+The fastest migration path uses VoiceDesign — describe any voice in natural language instead of choosing from preset names:
 
-Standard OpenAI TTS call using one of the 6 fixed voices:
+**Python**
 
-**curl**
-```bash
-curl https://api.openai.com/v1/audio/speech \
-  -H "Authorization: Bearer $OPENAI_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"model": "tts-1", "voice": "nova", "input": "Hello world"}' \
-  --output output.mp3
+```python
+import requests
+
+# murmr VoiceDesign — describe any voice you want
+response = requests.post(
+    "https://api.murmr.dev/v1/voices/design",
+    headers={"Authorization": "Bearer YOUR_MURMR_API_KEY"},
+    json={
+        "text": "Hello, world!",
+        "voice_description": "A warm, professional female voice",
+        "language": "English"
+    }
+)
+
+with open("output.wav", "wb") as f:
+    f.write(response.content)
 ```
 
-**TypeScript**
-```typescript
-import OpenAI from 'openai';
-import { writeFileSync } from 'fs';
+**JavaScript/Node**
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-const response = await openai.audio.speech.create({
-  model: 'tts-1',
-  voice: 'nova',
-  input: 'Hello, this is a test.',
+```javascript
+// murmr VoiceDesign — describe any voice you want
+const response = await fetch("https://api.murmr.dev/v1/voices/design", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer YOUR_MURMR_API_KEY",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    text: "Hello, world!",
+    voice_description: "A warm, professional female voice",
+    language: "English"
+  })
 });
 
 const buffer = Buffer.from(await response.arrayBuffer());
-writeFileSync('output.mp3', buffer);
+fs.writeFileSync("output.wav", buffer);
 ```
 
-**Python**
-```python
-from openai import OpenAI
+> **💡 OpenAI Voice Equivalents**
+> Instead of mapping OpenAI voices 1:1, describe what you want:
+> - OpenAI `alloy` → "A neutral, clear voice for general use"
+> - OpenAI `echo` → "A warm, resonant male voice"
+> - OpenAI `nova` → "A bright, energetic female voice"
+> - OpenAI `shimmer` → "A playful, upbeat voice"
 
-client = OpenAI()
+## Voice Strategy
 
-response = client.audio.speech.create(
-    model="tts-1",
-    voice="alloy",
-    input="Hello, welcome to our application.",
-)
+Unlike OpenAI's fixed voices, murmr uses **VoiceDesign** — describe any voice in natural language and generate speech with it. Here's the recommended migration approach:
 
-response.stream_to_file("output.mp3")
+1. **Create voices with VoiceDesign** — Use the [Playground](https://murmr.dev/en/dashboard/playground) or [VoiceDesign API](./voicedesign.md) to describe the voice you want: "A warm, professional female voice, calm and clear"
+
+2. **Save voices you like** — Found a voice you love? Save it via the [Voices API](./voices.md) to get a stable ID like `voice_abc123`
+
+3. **Use saved voices in production** — Use your saved voice IDs with the batch or streaming endpoints for consistent, repeatable output.
+
+## Key Differences
+
+- **Same — Endpoint structure & auth:** `/v1/audio/speech` with Bearer token in Authorization header — same as OpenAI.
+
+- **Better — Voice flexibility:** Instead of 6 fixed voices, create any voice with VoiceDesign. Describe exactly what you need.
+
+- **Better — Streaming support:** SSE streaming for low-latency playback (~450ms TTFC), or batch mode for complete audio files.
+
+- **Extra — Response format options:** Batch endpoint supports `response_format`: `mp3`, `opus`, `aac`, `flac`, `wav` (default), `pcm`
+
+- **Extra — WebSocket real-time:** WebSocket API for voice agents and LLM integration. See [Real-time docs](./realtime.md).
+
+- **Different — Batch is async:** The batch endpoint (`/v1/audio/speech`) returns `202` with a job ID. Poll `GET /v1/jobs/{jobId}` to retrieve the audio when ready. This endpoint is optimized for bulk generation and file exports — for low-latency playback, use [`/v1/audio/speech/stream`](./streaming.md) instead (~450ms to first audio).
+
+- **Different — Language parameter:** murmr adds a `language` parameter using full names (`"English"`, `"French"`, `"Japanese"`). Defaults to `"Auto"` for automatic detection. See [Language Support](./languages.md).
+
+> **⚠️ OpenAI SDK Compatibility**
+> The OpenAI SDK's `client.audio.speech.create()` targets `/v1/audio/speech`, which is murmr's async batch endpoint (returns `202` JSON, not audio). For direct SDK compatibility, use the [VoiceDesign](./voicedesign.md) or [Streaming](./streaming.md) endpoints instead, or use the REST API directly as shown below.
+
+## REST API Migration
+
+If you're using the REST API directly, here's how the requests compare:
+
+OpenAI:
+
+```cURL
+curl https://api.openai.com/v1/audio/speech \
+  -H "Authorization: Bearer sk-..." \
+  -H "Content-Type: application/json" \
+  -d '{"model": "tts-1", "voice": "alloy", "input": "Hello!"}'
 ```
 
-### After (murmr with VoiceDesign)
+murmr (VoiceDesign — returns audio directly):
 
-Replace the fixed voice name with a natural-language description. The endpoint changes to `/v1/voices/design`:
-
-**curl**
-```bash
+```cURL
 curl -X POST "https://api.murmr.dev/v1/voices/design" \
-  -H "Authorization: Bearer $MURMR_API_KEY" \
+  -H "Authorization: Bearer YOUR_MURMR_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "Hello world",
-    "voice_description": "A warm, professional female voice",
+    "text": "Hello!",
+    "voice_description": "A neutral, clear voice",
     "language": "English"
-  }' --output output.wav
+  }' --output hello.wav
 ```
 
-**TypeScript**
-```typescript
-import { MurmrClient } from '@murmr/sdk';
-import { writeFileSync } from 'fs';
+murmr (saved voice — streaming, recommended for real-time):
 
-const client = new MurmrClient({ apiKey: process.env.MURMR_API_KEY! });
-
-const wav = await client.voices.design({
-  input: 'Hello, this is a test.',
-  voice_description: 'A warm, friendly female voice similar to a podcast host',
-});
-
-writeFileSync('output.wav', wav);
-```
-
-**Python**
-```python
-import os
-from murmr import MurmrClient
-
-with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-    wav = client.voices.design(
-        input="Hello, welcome to our application.",
-        voice_description="A friendly, professional female voice",
-        language="English",
-    )
-
-    with open("output.wav", "wb") as f:
-        f.write(wav)
-```
-
-### After (murmr with Saved Voice -- Streaming)
-
-For real-time playback, use the streaming endpoint. It delivers first audio in ~450ms:
-
-**curl**
-```bash
+```cURL
 curl -X POST "https://api.murmr.dev/v1/audio/speech/stream" \
-  -H "Authorization: Bearer $MURMR_API_KEY" \
+  -H "Authorization: Bearer YOUR_MURMR_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "Hello world",
+    "text": "Hello!",
     "voice": "voice_abc123",
     "language": "English"
   }'
 # → SSE stream with base64 PCM chunks (~450ms to first audio)
 ```
 
-### After (murmr with Saved Voice -- Batch)
+murmr (saved voice — async batch, for bulk generation):
 
-For bulk generation and file exports, use the batch endpoint. It accepts saved voice IDs and supports all audio formats:
-
-**curl**
-```bash
+```cURL
 # Submit job (returns 202 with job ID)
 curl -X POST "https://api.murmr.dev/v1/audio/speech" \
-  -H "Authorization: Bearer $MURMR_API_KEY" \
+  -H "Authorization: Bearer YOUR_MURMR_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "Hello world",
+    "text": "Hello!",
     "voice": "voice_abc123",
     "language": "English",
     "response_format": "mp3"
   }'
+# → {"id": "job_abc123", "status": "queued", "created_at": "..."}
 
 # Poll for result
-curl "https://api.murmr.dev/v1/jobs/$JOB_ID" \
-  -H "Authorization: Bearer $MURMR_API_KEY"
+curl "https://api.murmr.dev/v1/jobs/job_abc123" \
+  -H "Authorization: Bearer YOUR_MURMR_KEY"
 ```
 
-**TypeScript**
-```typescript
-import { MurmrClient, isSyncResponse } from '@murmr/sdk';
-import { writeFileSync } from 'fs';
+Both `text` and `input` field names are accepted for OpenAI compatibility.
 
-const client = new MurmrClient({ apiKey: process.env.MURMR_API_KEY! });
+## Using murmr Extras
 
-const result = await client.speech.create({
-  input: 'Hello, this is a test.',
-  voice: 'voice_abc123',
-  response_format: 'mp3',
-});
+After migrating, take advantage of murmr-specific features:
 
-if (isSyncResponse(result)) {
-  writeFileSync('output.mp3', Buffer.from(await result.arrayBuffer()));
-}
+```Python
+import requests
+
+# Explicit language control
+response = requests.post(
+    "https://api.murmr.dev/v1/voices/design",
+    headers={"Authorization": "Bearer YOUR_MURMR_KEY"},
+    json={
+        "text": "Bonjour, comment allez-vous?",
+        "voice_description": "A warm, friendly French woman",
+        "language": "French"
+    }
+)
+
+# Streaming for low-latency playback (~450ms TTFC)
+response = requests.post(
+    "https://api.murmr.dev/v1/voices/design/stream",
+    headers={"Authorization": "Bearer YOUR_MURMR_KEY"},
+    json={
+        "text": "Welcome to the future of voice.",
+        "voice_description": "An enthusiastic narrator, building anticipation",
+        "language": "English"
+    },
+    stream=True
+)
+for line in response.iter_lines():
+    # SSE chunks with base64 PCM audio
+    pass
 ```
 
-**Python**
-```python
-import os
-from murmr import MurmrClient
+## Direct VoiceDesign
 
-with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-    result = client.speech.create_and_wait(
-        input="Hello, welcome to our application.",
-        voice="voice_abc123",
-        response_format="mp3",
-    )
+For one-off generations or experimentation, use VoiceDesign directly without saving:
 
-    with open("output.mp3", "wb") as f:
-        f.write(result.audio)
+```cURL
+curl -X POST "https://api.murmr.dev/v1/voices/design" \
+  -H "Authorization: Bearer YOUR_MURMR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Welcome to murmr. Creating voices has never been easier.",
+    "voice_description": "A warm, professional female voice, 35 years old, calm and clear",
+    "language": "English"
+  }' --output welcome.wav
 ```
 
-## Voice Strategy
+See [VoiceDesign API](./voicedesign.md) for streaming options and full parameter reference.
 
-OpenAI provides 6 fixed voices. murmr lets you create unlimited custom voices.
-
-**Recommended migration path:**
-
-1. Use VoiceDesign to describe each voice you need
-2. Generate a reference audio sample
-3. Save the voice for a persistent ID
-4. Map your old OpenAI voice names to the new murmr IDs
-
-Create a replacement voice for each OpenAI voice you use. This is a one-time setup -- save the voice ID and use it in production:
-
-**TypeScript**
-```typescript
-// One-time setup: create and save your voices
-const wav = await client.voices.design({
-  input: 'This is a reference recording for the Nova replacement voice.',
-  voice_description: 'A warm, friendly female voice, mid-20s, American',
-});
-
-const saved = await client.voices.save({
-  name: 'Nova Replacement',
-  description: 'A warm, friendly female voice, mid-20s, American',
-  audio: wav,
-  ref_text: 'This is a reference recording for the Nova replacement voice.',
-});
-
-console.log(`Nova replacement: ${saved.id}`);
-```
-
-Create a mapping from OpenAI voice names to murmr voice IDs for a drop-in replacement function:
-
-**Python**
-```python
-# Map OpenAI voices to your saved murmr voices
-VOICE_MAP = {
-    "alloy": "voice_abc123",
-    "echo": "voice_def456",
-    "nova": "voice_ghi789",
-}
-
-def generate_speech(text: str, voice: str = "alloy", fmt: str = "mp3") -> bytes:
-    """Drop-in replacement for OpenAI TTS."""
-    murmr_voice = VOICE_MAP[voice]
-
-    with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-        result = client.speech.create_and_wait(
-            input=text,
-            voice=murmr_voice,
-            response_format=fmt,
-        )
-        return result.audio
-```
-
-## Key Differences
-
-| Feature | OpenAI TTS | murmr |
-|---------|-----------|-------|
-| Voice selection | 6 fixed voices by name | Unlimited custom voices via description or saved IDs |
-| Batch response | 200 with audio bytes | 202 async with job ID (poll or webhook). For low-latency use cases, use `/v1/audio/speech/stream` instead (~450ms TTFC) |
-| Streaming | Proprietary chunked response | Standard SSE (`text/event-stream`) |
-| Audio formats | mp3, opus, aac, flac, wav, pcm | mp3, opus, aac, flac, wav, pcm |
-| WebSocket realtime | Yes (separate API) | Yes (`/v1/realtime`) |
-| Languages | Auto-detect only | 10 languages with explicit `language` parameter |
-| Long-form | Manual chunking required | Built-in `createLongForm()` / `create_long_form()` with auto-chunking |
-| Max text length | 4,096 characters | 4,096 characters (unlimited via long-form) |
-| `speed` parameter | Supported | Not supported (natural pacing) |
-
-## Additional murmr Features
-
-After migrating, take advantage of murmr-specific capabilities:
-
-- **VoiceDesign** -- Describe any voice instead of choosing from a fixed list
-- **Voice Saving** -- Save and reuse voices with consistent IDs
-- **Long-Form Audio** -- Built-in chunking for text of any length
-- **10 Languages** -- Explicit language parameter with cross-lingual synthesis
-- **Typed Streaming** -- Audio chunks with metadata (TTFC, chunk index)
-- **WebSocket Realtime** -- Persistent connection for voice agent applications
-- **Async Jobs** -- Submit and poll or use webhooks
-- **Portable Embeddings** -- Store voice embeddings in your own database
-
-## OpenAI SDK Compatibility Note
-
-If you are using the OpenAI Node.js or Python SDK pointed at murmr's base URL, be aware that the batch endpoint returns HTTP 202 (async) instead of 200. The OpenAI SDK expects 200 and may not handle 202 responses correctly. Use the native murmr SDK instead:
-
-```typescript
-// May not work correctly for all request types:
-import OpenAI from 'openai';
-const openai = new OpenAI({
-  apiKey: process.env.MURMR_API_KEY,
-  baseURL: 'https://api.murmr.dev/v1',
-});
-
-// Use the murmr SDK instead:
-import { MurmrClient } from '@murmr/sdk';
-const client = new MurmrClient({ apiKey: process.env.MURMR_API_KEY! });
-```
-
-## See Also
-
-- [Voice Crafting](./voice-crafting.md) -- Create effective voice descriptions
-- [Style Instructions](./style-instructions.md) -- Control voice delivery
-- [Async Jobs](./async-jobs.md) -- Batch processing with polling and webhooks
-- [Long-Form Audio](./long-form.md) -- Generate audio from text of any length
+> **ℹ️ Pricing**
+> murmr offers competitive pricing compared to OpenAI TTS, especially at higher volumes. Check the [Pricing page](./pricing.md) for details.

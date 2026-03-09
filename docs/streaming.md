@@ -1,228 +1,97 @@
 # SSE Streaming
 
-murmr delivers audio via Server-Sent Events (SSE) for low-latency playback. First chunk latency is typically under 450ms. This guide covers the SSE format, streaming endpoints, browser playback, and Node.js/Python usage patterns.
+Stream audio progressively with Server-Sent Events. Start playback in ~450ms instead of waiting for the complete file.
+
+## When to Use SSE
+
+### Good For
+
+- Landing page demos
+- Dashboard previews
+- Mobile apps (simple integration)
+- Any scenario where you want fast first audio
+
+### Consider WebSocket Instead
+
+- Voice agents / chatbots
+- LLM streaming integration
+- Bidirectional communication
+- Text buffering requirements
 
 ## Streaming Endpoints
 
 | Endpoint | Mode | Description |
-|----------|------|-------------|
-| `/v1/voices/design` | VoiceDesign | SSE streaming (always streams) |
-| `/v1/voices/design/stream` | VoiceDesign | Alias for the above |
-| `/v1/audio/speech/stream` | Saved Voice | Stream with a saved voice ID |
+| --- | --- | --- |
+| /v1/voices/design | VoiceDesign | SSE streaming (always streams) |
+| /v1/voices/design/stream | VoiceDesign | Alias for the above |
+| /v1/audio/speech/stream | Saved Voice | Stream with a saved voice ID |
 
-All streaming endpoints return `text/event-stream` responses with base64-encoded PCM audio chunks.
+> **ℹ️ VoiceDesign always streams**
+> Both `/v1/voices/design` and `/v1/voices/design/stream` return SSE. The `/stream` suffix is optional — it exists for consistency with the Saved Voices API which has separate batch and streaming endpoints.
 
-## When to Use SSE vs WebSocket
+## Performance
 
-| SSE (this guide) | WebSocket (`/v1/realtime`) |
-|------------------|---------------------------|
-| Landing page demos | Voice agents / chatbots |
-| Dashboard previews | LLM streaming integration |
-| Mobile apps (simple integration) | Bidirectional communication |
-| Any scenario where you want fast first audio | Text buffering requirements |
+~450ms
 
-## Audio Specifications
+Time to first chunk (server-side)
 
-| Property | Value |
-|----------|-------|
-| Sample rate | 24,000 Hz |
-| Bit depth | 16-bit |
-| Channels | Mono (1) |
-| Encoding | PCM signed 16-bit little-endian (`pcm_s16le`) |
-| Chunk encoding | Base64 |
-| Chunk size | ~4,800 bytes (~100ms of audio) |
+24kHz
+
+PCM sample rate (16-bit mono)
+
+15s
+
+Keepalive interval (SSE comment)
+
+> The server sends an SSE comment (`: keepalive`) every 15 seconds during inactivity to prevent proxies and CDNs from closing the connection. Most SSE clients ignore comments automatically.
 
 ## SSE Event Format
 
-Each SSE event is a `data:` line containing a JSON object.
+The stream returns two event types: audio chunks and a completion marker.
 
-### Audio Chunk Event
+### Audio Chunk
 
-```
-data: {"chunk":"<base64 PCM data>","chunk_index":0,"sample_rate":24000,"format":"pcm_s16le","first_chunk_latency_ms":450}
-```
-
-### Completion Event
-
-```
-data: {"done":true,"total_chunks":42,"total_time_ms":3250,"first_chunk_latency_ms":380,"sample_rate":24000}
-```
-
-### Error Event
-
-```
-data: {"error":"Rate limit exceeded","done":true}
-```
-
-### Field Reference
-
-| Field | Type | Present In | Description |
-|-------|------|-----------|-------------|
-| `audio` | string | Audio chunks | Base64-encoded PCM data |
-| `chunk` | string | Audio chunks | Alias for `audio` (some endpoints use this) |
-| `chunk_index` | number | Audio chunks | Zero-based index of the chunk |
-| `sample_rate` | number | Audio chunks | Always `24000` |
-| `format` | string | Audio chunks | Always `pcm_s16le` |
-| `mode` | string | Audio chunks | `voicedesign` or `voice_clone` |
-| `first_chunk_latency_ms` | number | First chunk | Time to first byte in milliseconds |
-| `done` | boolean | Completion | `true` when stream is complete |
-| `total_chunks` | number | Completion | Total audio chunks sent |
-| `total_time_ms` | number | Completion | Total generation time |
-| `error` | string | Error events | Error message if generation failed mid-stream |
-
-## curl
-
-Stream audio directly from the command line. The response is a `text/event-stream` with JSON-encoded SSE events containing base64 PCM audio:
-
-**curl**
-```bash
-# VoiceDesign streaming
-curl -X POST "https://api.murmr.dev/v1/voices/design" \
-  -H "Authorization: Bearer $MURMR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "Hello! This audio is streaming to you in real time.",
-    "voice_description": "A confident male narrator voice",
-    "language": "English"
-  }'
-
-# Saved voice streaming
-curl -X POST "https://api.murmr.dev/v1/audio/speech/stream" \
-  -H "Authorization: Bearer $MURMR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "Stream audio for real-time playback.",
-    "voice": "voice_abc123"
-  }'
-```
-
-## TypeScript
-
-Collect all streamed PCM chunks and combine them into a WAV file. The `first_chunk_latency_ms` field on the first chunk tells you the time-to-first-chunk (TTFC):
-
-**TypeScript**
-```typescript
-import { MurmrClient } from '@murmr/sdk';
-import { writeFileSync } from 'node:fs';
-
-const client = new MurmrClient({
-  apiKey: process.env.MURMR_API_KEY!,
-});
-
-// VoiceDesign streaming
-const stream = await client.voices.designStream({
-  input: 'Collect the full stream into a WAV file.',
-  voice_description: 'A professional female narrator',
-});
-
-const pcmChunks: Buffer[] = [];
-
-for await (const chunk of stream) {
-  const audioData = chunk.audio || chunk.chunk;
-  if (audioData) {
-    pcmChunks.push(Buffer.from(audioData, 'base64'));
-  }
-  if (chunk.first_chunk_latency_ms) {
-    console.log(`TTFC: ${chunk.first_chunk_latency_ms}ms`);
-  }
+```JSON
+data: {
+  "chunk": "<base64 PCM int16>",
+  "chunk_index": 0,
+  "sample_rate": 24000,
+  "format": "pcm_s16le",
+  "mode": "voicedesign",
+  "first_chunk_latency_ms": 450
 }
-
-// Build WAV using SDK utility
-import { createWavHeader } from '@murmr/sdk';
-
-const pcm = Buffer.concat(pcmChunks);
-const wav = Buffer.concat([createWavHeader(pcm.length), pcm]);
-writeFileSync('output.wav', wav);
 ```
 
-## Python
+### Completion
 
-Stream audio and collect PCM chunks in Python. The stream context manager handles connection lifecycle automatically:
-
-**Python (sync)**
-```python
-import os
-from murmr import MurmrClient
-
-with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-    # Voice Design streaming
-    with client.voices.design_stream(
-        input="Streaming delivers audio with minimal latency.",
-        voice_description="A clear, professional female narrator",
-    ) as stream:
-        pcm_parts = []
-        for chunk in stream:
-            pcm_parts.append(chunk.audio_bytes)
-
-            if chunk.first_chunk_latency_ms is not None:
-                print(f"TTFC: {chunk.first_chunk_latency_ms:.0f}ms")
-
-        pcm_audio = b"".join(pcm_parts)
-
-    # Saved voice streaming
-    with client.speech.stream(
-        input="Using a saved voice for streaming.",
-        voice="voice_abc123def456",
-    ) as stream:
-        for chunk in stream:
-            pcm_data = chunk.audio_bytes
+```JSON
+data: {
+  "done": true,
+  "total_chunks": 5,
+  "total_time_ms": 2500,
+  "first_chunk_latency_ms": 450,
+  "sample_rate": 24000
+}
 ```
 
-**Python (async)**
-```python
-import asyncio
-import os
-from murmr import AsyncMurmrClient
+#### Field Reference
 
-async def main():
-    async with AsyncMurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-        async with client.voices.design_stream(
-            input="Async streaming for high-concurrency applications.",
-            voice_description="A warm male voice",
-        ) as stream:
-            async for chunk in stream:
-                pcm_data = chunk.audio_bytes
+- `chunk` — Base64-encoded PCM audio (int16, little-endian)
+- `chunk_index` — Zero-based chunk sequence number
+- `sample_rate` — Always 24000 Hz
+- `format` — Always "pcm_s16le"
+- `mode` — "voicedesign" or "voice_clone"
+- `first_chunk_latency_ms` — Server-side time to first chunk
+- `done` — True when stream is complete
 
-asyncio.run(main())
-```
+## Browser — Web Audio API
 
-## Saving Streamed Audio as WAV
+Progressive playback with Web Audio API. Audio starts as soon as the first chunk arrives (~450ms):
 
-The stream produces raw PCM without a header. To save as a playable WAV file, wrap the PCM data with a WAV header using Python's `wave` module. Set nchannels=1, sampwidth=2, framerate=24000 to match murmr's output:
-
-**Python**
-```python
-import io
-import wave
-import os
-from murmr import MurmrClient
-
-with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-    with client.voices.design_stream(
-        input="Save streamed audio as a WAV file.",
-        voice_description="A cheerful young voice",
-    ) as stream:
-        pcm_chunks = [chunk.audio_bytes for chunk in stream]
-
-    pcm_data = b"".join(pcm_chunks)
-
-    buf = io.BytesIO()
-    with wave.open(buf, "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(24000)
-        wf.writeframes(pcm_data)
-
-    with open("output.wav", "wb") as f:
-        f.write(buf.getvalue())
-```
-
-## Browser: Web Audio API Playback
-
-Stream audio directly to the browser for real-time playback using the Web Audio API. This example parses SSE events from a `fetch` response, decodes base64 PCM to Float32, and schedules gapless playback:
+**VoiceDesign**
 
 ```javascript
-async function playStream(text, voiceDescription) {
+async function streamTTS(text, voiceDescription) {
   const response = await fetch('https://api.murmr.dev/v1/voices/design', {
     method: 'POST',
     headers: {
@@ -239,6 +108,7 @@ async function playStream(text, voiceDescription) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
 
+  // Set up Web Audio for seamless chunk playback
   const audioContext = new AudioContext({ sampleRate: 24000 });
   let nextStartTime = audioContext.currentTime;
 
@@ -249,14 +119,15 @@ async function playStream(text, voiceDescription) {
 
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
+    buffer = lines.pop() ?? '';  // Keep incomplete line
 
     for (const line of lines) {
       if (!line.startsWith('data: ')) continue;
+
       const data = JSON.parse(line.slice(6));
 
       if (data.chunk) {
-        // Decode base64 PCM to Float32
+        // Decode base64 PCM → Int16 → Float32
         const binary = atob(data.chunk);
         const bytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
@@ -283,55 +154,234 @@ async function playStream(text, voiceDescription) {
   }
 }
 
-playStream('Hello, world!', 'A warm, friendly voice');
+streamTTS('Hello, world!', 'A warm, friendly voice');
 ```
 
-## Batch vs Streaming Comparison
+**Saved Voice**
 
-| Feature | Batch (`/v1/audio/speech`) | Streaming (`/v1/audio/speech/stream`) |
-|---------|---------------------------|--------------------------------------|
-| Latency | Seconds (full generation) | ~450ms to first chunk |
-| Response | Complete audio file | SSE with PCM chunks |
-| Formats | wav, mp3, opus, aac, flac, pcm | PCM only (24kHz, 16-bit, mono) |
-| Max text | 4,096 characters | 4,096 characters |
-| Webhook support | Yes | No |
-| Best for | File generation, async workflows | Real-time playback, interactive apps |
-
-## Error Handling in Streams
-
-Errors can occur before the stream starts (HTTP error status, thrown as `MurmrError`) or mid-stream (error field in an SSE event). Always check both: catch `MurmrError` for pre-stream failures and check `chunk.error` for mid-stream failures:
-
-**TypeScript**
-```typescript
-import { MurmrClient, MurmrError } from '@murmr/sdk';
-
-const client = new MurmrClient({
-  apiKey: process.env.MURMR_API_KEY!,
-});
-
-try {
-  const stream = await client.speech.stream({
-    input: 'Handle errors gracefully.',
-    voice: 'voice_abc123',
+```javascript
+async function streamSavedVoice(text, voiceId) {
+  const response = await fetch('https://api.murmr.dev/v1/audio/speech/stream', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer YOUR_API_KEY',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      text,
+      voice: voiceId,      // e.g. "voice_abc123"
+      language: 'English'
+    })
   });
 
-  for await (const chunk of stream) {
-    if (chunk.error) {
-      console.error(`Stream error: ${chunk.error}`);
-      break;
+  // Same SSE parsing and Web Audio playback as VoiceDesign
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  const audioContext = new AudioContext({ sampleRate: 24000 });
+  let nextStartTime = audioContext.currentTime;
+
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const data = JSON.parse(line.slice(6));
+
+      if (data.chunk) {
+        const binary = atob(data.chunk);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const int16 = new Int16Array(bytes.buffer);
+
+        const float32 = new Float32Array(int16.length);
+        for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768;
+
+        const audioBuffer = audioContext.createBuffer(1, float32.length, 24000);
+        audioBuffer.getChannelData(0).set(float32);
+
+        const source = audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioContext.destination);
+        source.start(Math.max(audioContext.currentTime, nextStartTime));
+        nextStartTime = Math.max(audioContext.currentTime, nextStartTime) + audioBuffer.duration;
+      }
+
+      if (data.done) {
+        console.log(`Done: ${data.total_chunks} chunks, TTFC: ${data.first_chunk_latency_ms}ms`);
+      }
     }
-    // Process audio
-  }
-} catch (error) {
-  if (error instanceof MurmrError) {
-    console.error(`API error ${error.status}: ${error.message}`);
   }
 }
+
+streamSavedVoice('Hello, world!', 'voice_abc123');
+```
+
+## Node.js & Python
+
+**Node.js**
+
+```javascript
+import fs from 'fs';
+
+async function streamToFile(text, voiceDescription) {
+  const response = await fetch('https://api.murmr.dev/v1/voices/design', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.MURMR_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      text,
+      voice_description: voiceDescription,
+      language: 'English'
+    })
+  });
+
+  const chunks = [];
+
+  for await (const line of response.body.pipeThrough(new TextDecoderStream()).pipeThrough(
+    new TransformStream({
+      transform(chunk, controller) {
+        for (const line of chunk.split('\n')) {
+          if (line.startsWith('data: ')) controller.enqueue(line.slice(6));
+        }
+      }
+    })
+  )) {
+    const data = JSON.parse(line);
+    if (data.chunk) chunks.push(Buffer.from(data.chunk, 'base64'));
+    if (data.done) console.log(`TTFC: ${data.first_chunk_latency_ms}ms`);
+  }
+
+  // Write WAV file
+  const pcm = Buffer.concat(chunks);
+  const wavHeader = createWavHeader(pcm.length, 24000, 1, 16);
+  fs.writeFileSync('output.wav', Buffer.concat([wavHeader, pcm]));
+}
+
+function createWavHeader(dataSize, sampleRate, channels, bitsPerSample) {
+  const header = Buffer.alloc(44);
+  const byteRate = sampleRate * channels * (bitsPerSample / 8);
+  const blockAlign = channels * (bitsPerSample / 8);
+
+  header.write('RIFF', 0);
+  header.writeUInt32LE(36 + dataSize, 4);
+  header.write('WAVE', 8);
+  header.write('fmt ', 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write('data', 36);
+  header.writeUInt32LE(dataSize, 40);
+  return header;
+}
+```
+
+**Python**
+
+```python
+import requests
+import base64
+import json
+import io
+import wave
+
+def stream_tts(text: str, voice_description: str) -> bytes:
+    """Stream VoiceDesign audio and return PCM bytes."""
+    response = requests.post(
+        "https://api.murmr.dev/v1/voices/design",
+        headers={
+            "Authorization": "Bearer YOUR_API_KEY",
+            "Content-Type": "application/json",
+        },
+        json={
+            "text": text,
+            "voice_description": voice_description,
+            "language": "English",
+        },
+        stream=True,
+    )
+
+    chunks = []
+    for line in response.iter_lines():
+        if not line:
+            continue
+
+        line = line.decode("utf-8")
+        if not line.startswith("data: "):
+            continue
+
+        data = json.loads(line[6:])
+
+        if "chunk" in data:
+            chunks.append(base64.b64decode(data["chunk"]))
+            print(f"Chunk {data['chunk_index']}: {len(chunks[-1])} bytes")
+
+        if data.get("done"):
+            print(f"TTFC: {data['first_chunk_latency_ms']}ms")
+            break
+
+    return b"".join(chunks)
+
+# Save as WAV
+pcm_data = stream_tts("Hello, world!", "A warm, friendly voice")
+
+buf = io.BytesIO()
+with wave.open(buf, "wb") as wf:
+    wf.setnchannels(1)
+    wf.setsampwidth(2)  # 16-bit
+    wf.setframerate(24000)
+    wf.writeframes(pcm_data)
+
+with open("output.wav", "wb") as f:
+    f.write(buf.getvalue())
+```
+
+## Batch vs Streaming
+
+|  | HTTP Batch | SSE Streaming |
+| --- | --- | --- |
+| Time to first audio | After full generation | ~450ms |
+| Response format | WAV/MP3/Opus/AAC/FLAC | PCM chunks (base64) |
+| Request model | Async — 202 + poll | Synchronous stream |
+| Best for | Bulk generation, file downloads | Real-time playback, demos |
+| Endpoints | /v1/audio/speech | /v1/audio/speech/stream, /v1/voices/design |
+
+## Error Handling
+
+Errors during streaming are returned as SSE events. The stream closes after an error event.
+
+```JSON
+data: {"error": "Rate limit exceeded", "done": true}
+```
+
+If the request fails before streaming starts (bad parameters, auth failure), you get a standard HTTP error response instead of SSE. Always check `response.ok` before reading the stream.
+
+```javascript
+const response = await fetch(url, options);
+
+if (!response.ok) {
+  const error = await response.json();
+  throw new Error(error.message ?? `HTTP ${response.status}`);
+}
+
+// Safe to read SSE stream
+const reader = response.body.getReader();
 ```
 
 ## See Also
 
-- [Speech Generation](./speech.md) -- Batch and streaming endpoints
-- [Voice Design](./voicedesign.md) -- Streaming with voice descriptions
-- [Audio Formats](./audio-formats.md) -- PCM specifications and conversion
-- [Errors](./errors.md) -- Error handling reference
+- [WebSocket Real-time](./realtime.md) — Bidirectional streaming for voice agents
+- [Audio Formats](./audio-formats.md) — Batch response formats (MP3, Opus, WAV)
+- [VoiceDesign API](./voicedesign.md) — Create voices for streaming

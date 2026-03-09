@@ -1,120 +1,97 @@
-# Python SDK Reference
+# Python SDK
 
-Complete reference for the `murmr` Python SDK. Covers all methods, parameters, and return types for `MurmrClient` (sync) and `AsyncMurmrClient` (async).
+Official Python client for the murmr TTS API. Async-first with full sync support, powered by httpx and Pydantic v2.
+
+## Installation
+
+```bash
+pip install murmr
+```
+
+> **ℹ️ Requirements**
+> Python 3.9 or later. Dependencies: `httpx` (HTTP client) and `pydantic` v2 (response models).
 
 ## Client
 
-Import the sync client for scripts and server frameworks, or the async client for `asyncio`-based applications. Both have identical APIs; the async variant prefixes all methods with `await`.
+Two client classes are available. Both support context managers for automatic cleanup.
+
+**Sync**
 
 ```python
-from murmr import MurmrClient, AsyncMurmrClient
-```
+from murmr import MurmrClient
 
-### Constructor Parameters
+client = MurmrClient(api_key="murmr_sk_live_...")
 
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `api_key` | `str` | Yes | -- | Your murmr API key. Sent as a Bearer token. |
-| `base_url` | `str` | No | `https://api.murmr.dev` | Override the API base URL. |
-| `timeout` | `float` | No | `300.0` | Request timeout in seconds (5 min default). |
-
-### Context Managers
-
-Both clients support context managers for automatic cleanup (closes the underlying `httpx` client). Using a context manager is recommended to avoid resource leaks in long-running applications.
-
-```python
-# Sync
+# Or as a context manager
 with MurmrClient(api_key="murmr_sk_live_...") as client:
-    # client.close() called automatically on exit
-    pass
+    wav = client.voices.design(
+        input="Hello!",
+        voice_description="A warm, friendly voice",
+    )
+```
 
-# Async
+**Async**
+
+```python
+from murmr import AsyncMurmrClient
+
 async with AsyncMurmrClient(api_key="murmr_sk_live_...") as client:
-    # client.close() called automatically on exit
-    pass
+    wav = await client.voices.design(
+        input="Hello!",
+        voice_description="A warm, friendly voice",
+    )
 ```
-
-The client exposes three resource namespaces: `client.speech`, `client.voices`, and `client.jobs`.
-
----
-
-## Speech
-
-### client.speech.create()
-
-Generate speech from text using a saved voice. Returns audio bytes synchronously by default, or a job ID when `webhook_url` is provided.
-
-**Default (no `webhook_url`):** Returns `SyncAudioResponse` with audio bytes (HTTP 200).
-**With `webhook_url`:** Returns `AsyncJobResponse` with a job ID (HTTP 202).
-
-#### Parameters
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `input` | `str` | Yes | -- | Text to synthesize. Max 4,096 characters. |
-| `voice` | `str` | Yes | -- | Saved voice ID (e.g. `voice_abc123`). |
-| `voice_clone_prompt` | `str` | No | `None` | Base64 voice embedding from `extract_embeddings()`. Takes precedence over `voice`. |
-| `language` | `str` | No | `"English"` | Output language. 10 supported + `"auto"`. |
-| `response_format` | `str` | No | `"wav"` | Audio format: `mp3`, `opus`, `aac`, `flac`, `wav`, or `pcm`. |
-| `webhook_url` | `str` | No | `None` | HTTPS URL for async delivery. Returns 202 with job ID. |
+| `api_key` | str | Yes | -- | Your murmr API key. Sent as a Bearer token. |
+| `base_url` | str | No | https://api.murmr.dev | Override the API base URL. |
+| `timeout` | float | No | 300.0 | Request timeout in seconds (5 minutes default). |
 
-#### Return Type
+Both clients expose three resource namespaces:
 
-`SyncAudioResponse | AsyncJobResponse`
+`client.speech`
 
-#### Sync Example
+Generate audio from text
 
-Generate audio from a saved voice and write it to a file. The default response (no `webhook_url`) returns a `SyncAudioResponse` with audio bytes:
+`client.voices`
+
+Design voices with natural language
+
+`client.jobs`
+
+Track async batch jobs
+
+## client.speech.create()
+
+Submits a batch job and returns an `AsyncJobResponse` with a job ID. Use `create_and_wait()` for a synchronous experience.
 
 ```python
-result = client.speech.create(
+job = client.speech.create(
     input="Hello, world!",
     voice="voice_abc123",
     language="English",
 )
 
-if isinstance(result, SyncAudioResponse):
-    with open("output.wav", "wb") as f:
-        f.write(result.audio)
+# job.id = "job_xyz", job.status = "queued"
+
+# Poll for completion
+result = client.jobs.wait_for_completion(job.id)
+with open("output.wav", "wb") as f:
+    f.write(result.audio_bytes)
 ```
-
-#### Async Example
-
-The async variant has the same interface. Use `await` on every method call:
-
-```python
-result = await client.speech.create(
-    input="Hello, world!",
-    voice="voice_abc123",
-    language="English",
-)
-
-if isinstance(result, SyncAudioResponse):
-    with open("output.wav", "wb") as f:
-        f.write(result.audio)
-```
-
-### client.speech.create_and_wait()
-
-Convenience method that submits a batch job and polls until completion. If the server returns audio synchronously (default), returns `SyncAudioResponse` immediately. Otherwise polls until done.
-
-#### Parameters
-
-All parameters from `speech.create()` (except `webhook_url`) plus:
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `poll_interval_s` | `float` | No | `3.0` | Seconds between status polls (minimum 1.0). |
-| `timeout_s` | `float` | No | `900.0` | Maximum wait time in seconds (15 min). |
-| `on_poll` | `Callable[[JobStatus], None]` | No | `None` | Callback invoked after each poll. |
+| `input` | str | Yes | -- | Text to synthesize. Max 4,096 characters. |
+| `voice` | str | Yes | -- | Saved voice ID (e.g. "voice_abc123"). |
+| `language` | str | No | English | Output language. 10 supported + "auto". |
+| `response_format` | str | No | wav | Audio format: mp3, opus, aac, flac, wav, or pcm. |
+| `webhook_url` | str | No | -- | HTTPS URL for async delivery. Returns 202 with job ID. |
 
-#### Return Type
+## client.speech.create_and_wait()
 
-`SyncAudioResponse | JobStatus`
-
-#### Sync Example
-
-Submit a batch TTS job and block until it completes. Returns `SyncAudioResponse` if the server responds immediately, or `JobStatus` after polling:
+Convenience method that submits a batch job and polls until completion. Returns a `JobStatus` with audio data.
 
 ```python
 result = client.speech.create_and_wait(
@@ -124,49 +101,15 @@ result = client.speech.create_and_wait(
     response_format="wav",
 )
 
-if isinstance(result, SyncAudioResponse):
-    with open("output.wav", "wb") as f:
-        f.write(result.audio)
-elif result.audio_bytes:
-    with open("output.wav", "wb") as f:
-        f.write(result.audio_bytes)
+with open("output.wav", "wb") as f:
+    f.write(result.audio_bytes)
 ```
 
-#### Async Example
+## client.speech.stream()
 
-Same as sync, but non-blocking. Useful in web servers or event loops where you cannot block the main thread:
+Stream audio using a saved voice via SSE. Returns a context manager that yields PCM audio chunks.
 
-```python
-result = await client.speech.create_and_wait(
-    input="Hello, world!",
-    voice="voice_abc123",
-    response_format="mp3",
-)
-
-if isinstance(result, SyncAudioResponse):
-    with open("output.mp3", "wb") as f:
-        f.write(result.audio)
-elif result.audio_bytes:
-    with open("output.mp3", "wb") as f:
-        f.write(result.audio_bytes)
-```
-
-### client.speech.stream()
-
-Stream audio using a saved voice via SSE. Returns a context manager that yields an iterator of `AudioStreamChunk` objects. Streaming always returns raw PCM audio (24kHz, mono, 16-bit signed little-endian).
-
-#### Parameters
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `input` | `str` | Yes | -- | Text to synthesize. Max 4,096 characters. |
-| `voice` | `str` | Yes | -- | Saved voice ID. |
-| `voice_clone_prompt` | `str` | No | `None` | Base64 voice embedding. Takes precedence over `voice`. |
-| `language` | `str` | No | `"English"` | Output language. |
-
-#### Sync Example
-
-Stream audio from a saved voice for real-time playback. The context manager yields `AudioStreamChunk` objects containing PCM audio (24kHz, mono, 16-bit):
+**Sync**
 
 ```python
 with client.speech.stream(
@@ -175,13 +118,12 @@ with client.speech.stream(
 ) as stream:
     for chunk in stream:
         pcm = chunk.audio_bytes  # 24kHz mono 16-bit PCM
+        # Process: pipe to speaker, save, etc.
         if chunk.done:
             break
 ```
 
-#### Async Example
-
-Async streaming for use in `asyncio` event loops. Each chunk is identical to the sync variant:
+**Async**
 
 ```python
 async with client.speech.stream(
@@ -194,40 +136,9 @@ async with client.speech.stream(
             break
 ```
 
-See [streaming](./streaming.md) for more details on SSE audio streaming.
-
-### client.speech.create_long_form()
+## client.speech.create_long_form()
 
 Generate audio for text of any length. Handles sentence-boundary chunking, sequential generation, retry with exponential backoff, progress callbacks, and WAV concatenation automatically.
-
-For text longer than 4,096 characters, use this method instead of manually splitting text.
-
-#### Parameters
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `input` | `str` | Yes | -- | Text of any length. Automatically chunked at sentence boundaries. |
-| `voice` | `str` | Yes | -- | Saved voice ID. |
-| `voice_clone_prompt` | `str` | No | `None` | Base64 voice embedding. Takes precedence over `voice`. |
-| `language` | `str` | No | `"English"` | Output language. |
-| `chunk_size` | `int` | No | `3500` | Max characters per chunk. Range: 100--4096. |
-| `silence_between_chunks_ms` | `int` | No | `400` | Milliseconds of silence between chunks. |
-| `max_retries` | `int` | No | `3` | Retry count per chunk. Backoff: 1s, 2s, 4s. |
-| `start_from_chunk` | `int` | No | `0` | Resume from a specific chunk index after failure. |
-| `on_progress` | `Callable[[int, int, int], None]` | No | `None` | Callback after each chunk. Receives `(current, total, percent)`. |
-
-#### Return Type: LongFormResult
-
-```python
-@dataclass(frozen=True)
-class LongFormResult:
-    audio: bytes          # WAV audio with silence gaps
-    total_chunks: int     # Number of chunks processed
-    duration_ms: int      # Total audio duration in ms
-    character_count: int  # Total characters processed
-```
-
-#### Sync Example
 
 ```python
 result = client.speech.create_long_form(
@@ -236,6 +147,7 @@ result = client.speech.create_long_form(
     language="English",
     chunk_size=3500,
     silence_between_chunks_ms=400,
+    max_retries=3,
     on_progress=lambda current, total, pct: print(f"{pct}%"),
 )
 
@@ -244,62 +156,50 @@ with open("article.wav", "wb") as f:
 print(f"{result.total_chunks} chunks, {result.duration_ms}ms total")
 ```
 
-#### Async Example
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `input` | str | Yes | -- | Text of any length. Automatically chunked at sentence boundaries. |
+| `voice` | str | Yes | -- | Saved voice ID. |
+| `chunk_size` | int | No | 3500 | Max characters per chunk. Range: 100-4096. |
+| `silence_between_chunks_ms` | int | No | 400 | Milliseconds of silence between chunks. |
+| `max_retries` | int | No | 3 | Retry count per chunk. Backoff: 1s, 2s, 4s. |
+| `start_from_chunk` | int | No | 0 | Resume from a specific chunk index after failure. |
+| `on_progress` | Callable | No | -- | Callback after each chunk. Receives (current, total, percent). |
+
+### Return Value
 
 ```python
-result = await client.speech.create_long_form(
-    input=long_article_text,
-    voice="voice_abc123",
-    language="English",
-    on_progress=lambda current, total, pct: print(f"{pct}%"),
-)
-
-with open("article.wav", "wb") as f:
-    f.write(result.audio)
+@dataclass(frozen=True)
+class LongFormResult:
+    audio: bytes          # WAV audio with silence gaps
+    total_chunks: int     # Number of chunks processed
+    duration_ms: float    # Total audio duration
+    character_count: int  # Total characters processed
 ```
 
-#### Resuming After Failure
+### Resuming After Failure
 
-If a chunk fails after all retries, a `MurmrChunkError` is raised with the chunk index. Use `start_from_chunk` to resume:
+If a chunk fails after all retries, a `MurmrChunkError` is thrown with the chunk index. Use `start_from_chunk` to resume.
 
 ```python
 from murmr import MurmrChunkError
 
 try:
-    result = client.speech.create_long_form(input=text, voice="voice_abc123")
+    result = client.speech.create_long_form(input=text, voice=voice)
 except MurmrChunkError as err:
     print(f"Failed at chunk {err.chunk_index}/{err.total_chunks}")
-    print(f"{err.completed_chunks} chunks completed")
 
     # Retry from the failed chunk
     result = client.speech.create_long_form(
         input=text,
-        voice="voice_abc123",
+        voice=voice,
         start_from_chunk=err.chunk_index,
     )
 ```
 
-See [long-form](./long-form.md) for more details.
+## client.voices.design()
 
----
-
-## Voices
-
-### client.voices.design()
-
-Generate audio with a natural-language voice description. Returns WAV audio as `bytes` (24kHz, mono, 16-bit PCM).
-
-#### Parameters
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `input` | `str` | Yes | -- | Text to synthesize. Max 4,096 characters. |
-| `voice_description` | `str` | Yes | -- | Natural language voice description. Max 500 characters. |
-| `language` | `str` | No | `"English"` | Output language. |
-
-#### Sync Example
-
-Create a voice from a natural-language description and generate audio. Returns complete WAV bytes (24kHz, mono, 16-bit PCM):
+Generate audio with a natural-language voice description. Returns WAV audio as `bytes`.
 
 ```python
 wav = client.voices.design(
@@ -312,32 +212,17 @@ with open("output.wav", "wb") as f:
     f.write(wav)
 ```
 
-#### Async Example
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `input` | str | Yes | -- | Text to synthesize. Max 4,096 characters. |
+| `voice_description` | str | Yes | -- | Natural language voice description. Max 500 characters. |
+| `language` | str | No | English | Output language. |
 
-Async variant returns the same WAV `bytes`:
+## client.voices.design_stream()
 
-```python
-wav = await client.voices.design(
-    input="Welcome to the show.",
-    voice_description="A deep, gravelly male voice, slow and deliberate",
-    language="English",
-)
+Stream audio with a voice description via SSE. Returns a context manager yielding PCM audio chunks.
 
-with open("output.wav", "wb") as f:
-    f.write(wav)
-```
-
-### client.voices.design_stream()
-
-Stream audio with a voice description via SSE. Returns a context manager yielding an iterator of `AudioStreamChunk` objects with raw PCM audio.
-
-#### Parameters
-
-Same as `voices.design()`.
-
-#### Sync Example
-
-Stream audio with a voice description via SSE for lower-latency playback than the non-streaming `design()` method. Each chunk contains raw PCM audio:
+**Sync**
 
 ```python
 with client.voices.design_stream(
@@ -350,9 +235,7 @@ with client.voices.design_stream(
             break
 ```
 
-#### Async Example
-
-Async streaming variant for use in `asyncio` applications:
+**Async**
 
 ```python
 async with client.voices.design_stream(
@@ -365,401 +248,83 @@ async with client.voices.design_stream(
             break
 ```
 
-### client.voices.list_voices()
+## Async Jobs
 
-Retrieve all saved voices for the authenticated user.
-
-#### Sync Example
-
-Retrieve all saved voices and check how many voice slots are used on your plan:
-
-```python
-response = client.voices.list_voices()
-
-print(f"Saved: {response.saved_count}/{response.saved_limit}")
-for voice in response.voices:
-    print(f"  {voice.id}: {voice.name} ({voice.language})")
-```
-
-#### Async Example
-
-Async variant for listing voices:
-
-```python
-response = await client.voices.list_voices()
-
-print(f"Saved: {response.saved_count}/{response.saved_limit}")
-for voice in response.voices:
-    print(f"  {voice.id}: {voice.name} ({voice.language})")
-```
-
-#### Return Type: VoiceListResponse
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `voices` | `list[SavedVoice]` | List of saved voices. |
-| `saved_count` | `int` | Number of voices saved. |
-| `saved_limit` | `int` | Maximum voices allowed on your plan. |
-| `total` | `int` | Total voice count. |
-
-Each `SavedVoice` has: `id`, `name`, `description`, `language`, `language_name`, `audio_preview_url`, `created_at`.
-
-### client.voices.save()
-
-Save a voice from audio generated by Voice Design for reuse with saved-voice endpoints.
-
-#### Parameters
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `name` | `str` | Yes | -- | Display name (1--50 characters). |
-| `audio` | `bytes` | Yes | -- | WAV audio bytes from a VoiceDesign generation. |
-| `description` | `str` | Yes | -- | The voice description used to generate the audio. |
-| `ref_text` | `str` | Yes | -- | Transcript of the reference audio (required for ICL extraction). |
-| `language` | `str` | No | `"English"` | Language code. |
-
-Voice limits by plan: Free: 3, Starter: 10, Pro: 25, Realtime: 50, Scale: 100.
-
-#### Sync Example
-
-Two-step workflow: generate reference audio with Voice Design, then save it for reuse. The `ref_text` must match the audio content for accurate embedding extraction:
-
-```python
-wav = client.voices.design(
-    input="This is my reference audio for voice saving.",
-    voice_description="A calm, professional male voice",
-)
-
-saved = client.voices.save(
-    name="Professional Narrator",
-    audio=wav,
-    description="A calm, professional male voice",
-    ref_text="This is my reference audio for voice saving.",
-    language="English",
-)
-
-print(f"Voice ID: {saved.id}")
-```
-
-#### Async Example
-
-Same two-step workflow using the async client:
-
-```python
-wav = await client.voices.design(
-    input="This is my reference audio for voice saving.",
-    voice_description="A calm, professional male voice",
-)
-
-saved = await client.voices.save(
-    name="Professional Narrator",
-    audio=wav,
-    description="A calm, professional male voice",
-    ref_text="This is my reference audio for voice saving.",
-)
-
-print(f"Voice ID: {saved.id}")
-```
-
-#### Return Type: VoiceSaveResponse
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `str` | Voice ID (e.g. `voice_abc123def456`). |
-| `name` | `str` | Display name. |
-| `language` | `str` | Language code. |
-| `description` | `str` | Voice description. |
-| `prompt_size_bytes` | `int` | Size of stored embeddings. |
-| `created_at` | `str` | ISO 8601 timestamp. |
-| `success` | `bool` | Whether the save succeeded. |
-| `has_audio_preview` | `bool` | Whether a preview was stored. |
-
-### client.voices.delete()
-
-Permanently delete a saved voice by ID.
-
-#### Sync Example
-
-Permanently remove a saved voice by its ID. This frees one slot toward your plan's saved voice limit:
-
-```python
-result = client.voices.delete("voice_abc123def456")
-print(f"Deleted: {result.success}")
-```
-
-#### Async Example
-
-Async variant for deleting a voice:
-
-```python
-result = await client.voices.delete("voice_abc123def456")
-print(f"Deleted: {result.success}")
-```
-
-#### Return Type: VoiceDeleteResponse
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `success` | `bool` | Whether the deletion succeeded. |
-| `id` | `str` | The deleted voice ID. |
-| `message` | `str` | Confirmation message. |
-
-### client.voices.extract_embeddings()
-
-Extract portable voice embeddings from audio without saving the voice. Store the returned `prompt_data` in your own database and pass it via `voice_clone_prompt` in any TTS request. See [portable embeddings](./portable-embeddings.md).
-
-#### Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `audio` | `bytes` | Yes | WAV audio to extract embeddings from. |
-| `ref_text` | `str` | Yes | Transcript of the reference audio (improves extraction quality). |
-
-#### Sync Example
-
-Extract a portable voice embedding from WAV audio and use it inline in a TTS request. The embedding (~50-200KB base64 string) can be stored in your own database:
-
-```python
-result = client.voices.extract_embeddings(
-    audio=open("reference.wav", "rb").read(),
-    ref_text="Transcript of the reference audio.",
-)
-
-# Use the embedding in a TTS request
-with client.speech.stream(
-    input="Hello from a portable voice!",
-    voice="inline",
-    voice_clone_prompt=result.prompt_data,
-) as stream:
-    for chunk in stream:
-        pcm = chunk.audio_bytes
-```
-
-#### Async Example
-
-Async variant for extracting and using portable embeddings:
-
-```python
-result = await client.voices.extract_embeddings(
-    audio=open("reference.wav", "rb").read(),
-    ref_text="Transcript of the reference audio.",
-)
-
-async with client.speech.stream(
-    input="Hello from a portable voice!",
-    voice="inline",
-    voice_clone_prompt=result.prompt_data,
-) as stream:
-    async for chunk in stream:
-        pcm = chunk.audio_bytes
-```
-
-#### Return Type: ExtractEmbeddingsResponse
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `prompt_data` | `str` | Base64-encoded voice embedding data. |
-| `prompt_size_bytes` | `int` | Size of the embedding in bytes. |
-
----
-
-## Jobs
+`speech.create()` always returns a job ID. Use these methods to poll for completion, or pass a `webhook_url` for async delivery.
 
 ### client.jobs.get()
 
-Get the status of an async batch job.
-
-#### Sync Example
-
-Check the current status of an async batch job by its ID. Returns a `JobStatus` with fields for status, audio data, and error info:
-
 ```python
 status = client.jobs.get("job_xyz")
-print(f"Status: {status.status}")
-```
-
-#### Async Example
-
-Async variant for checking job status:
-
-```python
-status = await client.jobs.get("job_xyz")
-print(f"Status: {status.status}")
-```
-
-#### Return Type: JobStatus
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `str` | Job ID. |
-| `status` | `str` | `"queued"`, `"processing"`, `"completed"`, or `"failed"`. |
-| `created_at` | `str` | ISO 8601 timestamp. |
-| `completed_at` | `str \| None` | Completion timestamp. |
-| `duration_ms` | `int \| None` | Audio duration in ms. |
-| `error` | `str \| None` | Error message if failed. |
-| `audio_base64` | `str \| None` | Base64-encoded audio (when completed). |
-| `content_type` | `str \| None` | Audio content type (e.g. `audio/wav`). |
-| `response_format` | `str \| None` | Audio format used. |
-
-The `JobStatus` model also provides an `audio_bytes` property that decodes `audio_base64` into raw `bytes`. Use this convenience property instead of manually base64-decoding:
-
-```python
-if status.audio_bytes:
-    with open("output.wav", "wb") as f:
-        f.write(status.audio_bytes)
+# status.id, status.status ("queued"|"processing"|"completed"|"failed")
 ```
 
 ### client.jobs.wait_for_completion()
 
-Poll until the job reaches `completed` or `failed`. Raises `MurmrError` with `code='JOB_FAILED'` if the job fails, or `code='TIMEOUT'` if the deadline is exceeded.
-
-#### Parameters
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `job_id` | `str` | Yes | -- | The job ID to poll. |
-| `poll_interval_s` | `float` | No | `3.0` | Seconds between polls (minimum 1.0). |
-| `timeout_s` | `float` | No | `900.0` | Maximum wait time in seconds (15 min). |
-| `on_poll` | `Callable[[JobStatus], None]` | No | `None` | Callback after each poll. |
-
-#### Sync Example
-
-Block until a job finishes, polling at regular intervals. Raises `MurmrError` with `code='JOB_FAILED'` on failure or `code='TIMEOUT'` if the deadline passes:
+Polls until the job reaches `completed` or `failed`.
 
 ```python
 result = client.jobs.wait_for_completion(
     "job_xyz",
-    poll_interval_s=3.0,
-    timeout_s=900.0,
-    on_poll=lambda status: print(f"Status: {status.status}"),
+    poll_interval=3.0,     # default: 3s
+    timeout=900.0,         # default: 15 min
 )
-
-if result.audio_bytes:
-    with open("output.wav", "wb") as f:
-        f.write(result.audio_bytes)
 ```
 
-#### Async Example
-
-Non-blocking version that polls without blocking the event loop:
-
-```python
-result = await client.jobs.wait_for_completion(
-    "job_xyz",
-    poll_interval_s=3.0,
-    timeout_s=900.0,
-)
-
-if result.audio_bytes:
-    with open("output.wav", "wb") as f:
-        f.write(result.audio_bytes)
-```
-
-#### Return Type
-
-`JobStatus` -- Always has `status == "completed"` and `audio_base64` populated.
-
----
+> Raises `MurmrError` with `code='JOB_FAILED'` if the job fails, or `code='TIMEOUT'` if the deadline is exceeded.
 
 ## Error Handling
-
-All errors raised by the SDK are instances of `MurmrError` or its subclass `MurmrChunkError`.
 
 ```python
 from murmr import MurmrError, MurmrChunkError
 
 try:
-    result = client.speech.create(input=text, voice="voice_abc123")
-except MurmrChunkError as err:
-    print(f"Long-form failed at chunk {err.chunk_index}/{err.total_chunks}")
+    audio = client.speech.create(input=text, voice=voice)
 except MurmrError as err:
     print(err.message)    # "Usage limit exceeded..."
     print(err.status)     # 429
     print(err.code)       # "JOB_FAILED", "TIMEOUT", etc.
 ```
 
-| Class | When Raised | Properties |
-|-------|-------------|------------|
-| `MurmrError` | API errors, validation, timeouts | `message`, `status`, `code`, `type`, `concurrent_limit`, `concurrent_active` |
-| `MurmrChunkError` | Long-form chunk failure after retries | `chunk_index`, `completed_chunks`, `total_chunks` (plus all `MurmrError` fields) |
-
-See [errors](./errors.md) for all error codes and retry strategies.
-
----
+| Class | When Raised | Extra Properties |
+| --- | --- | --- |
+| MurmrError | API errors, validation, timeouts | status, code, cause |
+| MurmrChunkError | Long-form chunk failure after retries | chunk_index, completed_chunks, total_chunks |
 
 ## Response Models
 
-All response types are immutable Pydantic v2 models (`frozen=True`). Import these types for `isinstance` checks and type annotations in your code:
+All response types are immutable Pydantic v2 models (`frozen=True`).
 
 ```python
+from murmr import (
+    MurmrClient,
+    AsyncMurmrClient,
+    MurmrError,
+    MurmrChunkError,
+)
+
+# Response models (Pydantic v2, frozen)
 from murmr._types import (
-    SyncAudioResponse,        # audio (bytes), content_type, duration_ms, total_time_ms
-    AsyncJobResponse,         # id, status ("queued"), created_at
-    JobStatus,                # id, status, audio_base64, audio_bytes (property)
-    AudioStreamChunk,         # audio_bytes (property), done, chunk_index
-    LongFormResult,           # audio (bytes), total_chunks, duration_ms, character_count
-    SavedVoice,               # id, name, description, language, created_at
-    VoiceListResponse,        # voices, saved_count, saved_limit, total
-    VoiceSaveResponse,        # id, name, success, prompt_size_bytes
-    VoiceDeleteResponse,      # success, id, message
-    ExtractEmbeddingsResponse,# prompt_data, prompt_size_bytes
+    AsyncJobResponse,     # id, status, created_at
+    JobStatus,            # id, status, audio_base64, audio_bytes
+    AudioStreamChunk,     # audio_bytes, done
+    LongFormResult,       # audio, total_chunks, duration_ms, character_count
 )
 ```
-
-### SyncAudioResponse
-
-Returned by `speech.create()` when the server responds synchronously (HTTP 200).
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `audio` | `bytes` | Raw audio bytes in the requested format. |
-| `content_type` | `str` | MIME type (e.g. `audio/wav`). |
-| `duration_ms` | `int` | Audio duration in milliseconds. |
-| `total_time_ms` | `int` | Total server processing time in milliseconds. |
-
-### AudioStreamChunk
-
-Yielded by `speech.stream()` and `voices.design_stream()`.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `audio` | `str \| None` | Base64-encoded PCM audio data. |
-| `chunk` | `str \| None` | Alias for audio (some SSE events use this field). |
-| `chunk_index` | `int \| None` | Zero-based index of this chunk. |
-| `sample_rate` | `int \| None` | Sample rate (always 24000). |
-| `first_chunk_latency_ms` | `float \| None` | Time to first chunk in milliseconds. |
-| `done` | `bool \| None` | `True` when the stream is complete. |
-| `total_chunks` | `int \| None` | Total chunks in the stream. |
-| `total_time_ms` | `float \| None` | Total generation time. |
-| `error` | `str \| None` | Error message, if any. |
-
-The `audio_bytes` property decodes the `audio` or `chunk` field from base64 into raw PCM bytes, ready to pipe to an audio player or write to a file:
-
-```python
-for chunk in stream:
-    pcm = chunk.audio_bytes  # bytes, ready to pipe to a speaker
-```
-
----
 
 ## Audio Constants
 
 | Value | Description |
-|-------|-------------|
-| 24,000 Hz | Sample rate (Qwen3-TTS native). |
-| 1 channel | Mono. |
-| 16-bit | PCM bit depth. |
-| 2 bytes/sample | Bytes per sample. |
-| 44 bytes | WAV header size. |
-
----
+| --- | --- |
+| 24,000 Hz | Sample rate (Qwen3-TTS native) |
+| 1 channel | Mono |
+| 16-bit | PCM bit depth |
+| 2 bytes/sample | Bytes per sample |
+| 44 bytes | WAV header size |
 
 ## See Also
 
-- [Installation](./installation.md) -- Setup and configuration
-- [Node.js SDK Reference](./sdk-reference-node.md) -- TypeScript equivalent
-- [Streaming](./streaming.md) -- SSE streaming details
-- [Long-Form Generation](./long-form.md) -- Text of any length
-- [Async Jobs](./async-jobs.md) -- Webhooks, polling, job lifecycle
-- [Audio Formats](./audio-formats.md) -- Format specs and encoding
-- [Errors](./errors.md) -- All error codes and retry strategies
+- [Node.js SDK](./sdk-reference-node.md) — TypeScript/JavaScript client
+- [Quickstart](./quickstart.md) — Get started in 5 minutes
+- [Async Jobs](./async-jobs.md) — Webhooks, polling, and job lifecycle
+- [Error Reference](./errors.md) — All HTTP and WebSocket error codes

@@ -1,221 +1,309 @@
 # Audio Formats
 
-murmr supports six audio output formats for batch generation. Streaming endpoints always deliver raw PCM. This guide covers format specifications, when to use each format, and how to convert between them.
+murmr supports six audio output formats via the `response_format` parameter. All formats are available on all plans.
 
-## Format Comparison
+## Supported Formats
 
-| Format | MIME Type | Codec | Bitrate | Lossless | Batch | Streaming |
-|--------|-----------|-------|---------|----------|-------|-----------|
-| `wav` | `audio/wav` | PCM | ~384 kbps | Yes | Default | -- |
-| `pcm` | `audio/pcm` | Raw PCM | ~384 kbps | Yes | Yes | Always |
-| `mp3` | `audio/mpeg` | LAME | 128 kbps | No | Yes | -- |
-| `opus` | `audio/opus` | Opus | 64 kbps | No | Yes | -- |
-| `aac` | `audio/aac` | AAC-LC | 64 kbps | No | Yes | -- |
-| `flac` | `audio/flac` | FLAC | ~200 kbps | Yes | Yes | -- |
+Set `response_format` in your request body. Defaults to `wav`.
+
+| Format | Codec | Bitrate | Content-Type | Best For |
+| --- | --- | --- | --- | --- |
+| wav | — | Lossless | audio/wav | Default, highest quality, editing |
+| pcm | — | Raw | audio/pcm | Direct playback, real-time pipelines |
+| mp3 | libmp3lame | 128k | audio/mpeg | Downloads, broadest compatibility |
+| opus | libopus | 64k | audio/opus | Low bandwidth, WebRTC, voice agents |
+| aac | aac | 64k | audio/aac | iOS/Safari, mobile apps |
+| flac | flac | Lossless | audio/flac | Archival, lossless compression |
+
+> **ℹ️ Batch Only**
+> - **Batch endpoint** (`/v1/audio/speech`) supports all 6 formats via the `response_format` parameter. Format conversion uses ffmpeg server-side.
+> - **Streaming endpoints** (`/stream`) always return raw PCM chunks (base64 encoded in SSE JSON), regardless of `response_format`.
+
+## Requesting a Format
+
+**cURL**
+
+```curl
+curl -X POST "https://api.murmr.dev/v1/audio/speech" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Hello, world!",
+    "voice": "voice_abc123",
+    "response_format": "mp3"
+  }'
+# Returns 202 with job ID — poll GET /v1/jobs/{jobId} for audio
+```
+
+**Python**
+
+```python
+import requests
+
+# Submit batch job with format
+response = requests.post(
+    "https://api.murmr.dev/v1/audio/speech",
+    headers={"Authorization": "Bearer YOUR_API_KEY"},
+    json={
+        "text": "Hello, world!",
+        "voice": "voice_abc123",
+        "response_format": "mp3"
+    }
+)
+
+job = response.json()
+# Poll GET /v1/jobs/{job['id']} — returns audio/mpeg when complete
+```
+
+**JavaScript**
+
+```javascript
+const response = await fetch("https://api.murmr.dev/v1/audio/speech", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer YOUR_API_KEY",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    text: "Hello, world!",
+    voice: "voice_abc123",
+    response_format: "mp3"
+  })
+});
+
+const job = await response.json();
+// Poll GET /v1/jobs/{job.id} — returns audio blob when complete
+```
 
 ## Native Audio Specifications
 
-All murmr audio is generated at these native specs regardless of output format:
+All audio is generated at these native specifications before encoding:
 
 | Property | Value |
-|----------|-------|
-| Sample rate | 24,000 Hz |
-| Bit depth | 16-bit |
-| Channels | Mono (1 channel) |
-| PCM encoding | Signed 16-bit little-endian (`pcm_s16le`) |
+| --- | --- |
+| Sample Rate | 24,000 Hz |
+| Bit Depth | 16-bit signed |
+| Channels | Mono (1) |
+| Encoding | PCM (pcm_s16le) |
+| Byte Order | Little-endian |
 
-## When to Use Which Format
+## PCM Format Details
 
-| Requirement | Recommended Format |
-|-------------|-------------------|
-| Maximum quality / archival | `wav` |
-| Web delivery | `mp3` |
-| iOS / Safari | `aac` |
-| Bandwidth constrained | `opus` |
-| Lossless with smaller file size | `flac` |
-| Audio processing pipeline | `pcm` |
-| Real-time playback | Use streaming (always PCM) |
+Raw PCM audio is signed 16-bit integers in little-endian byte order:
 
-## Format Details
+```Binary
+Each sample: 2 bytes (16 bits)
+  - Range: -32768 to +32767
+  - Little-endian: low byte first, high byte second
 
-### WAV (default)
+Example (silence): 0x00 0x00
+Example (max positive): 0xFF 0x7F = +32767
+Example (max negative): 0x00 0x80 = -32768
 
-Lossless, universally supported. Includes a 44-byte RIFF header followed by raw PCM data. Best for maximum quality, server-side processing, and archival. Drawback: large file size.
-
-### PCM (raw)
-
-Same audio data as WAV but without the header. Raw PCM samples in `pcm_s16le` format. Best for custom audio pipelines and real-time processing. Drawback: no metadata -- you must know the sample rate and format to decode.
-
-### MP3
-
-Lossy compression at 128 kbps. Widely supported across all platforms and browsers. Best for web delivery, mobile apps, and bandwidth-constrained environments.
-
-### Opus
-
-Highly efficient lossy codec at 64 kbps. Excellent quality-to-size ratio. Best for WebRTC, real-time communication, and low-bandwidth scenarios. Drawback: not supported in all legacy browsers/players.
-
-### AAC
-
-Lossy compression at 64 kbps. Native to Apple platforms and widely supported. Best for iOS/macOS apps and podcast distribution.
-
-### FLAC
-
-Lossless compression. Typically 40-60% smaller than WAV with zero quality loss. Best for high-quality delivery with smaller file size than WAV. Drawback: not supported in all browsers.
-
-## Using response_format
-
-The `response_format` parameter is only available on the **batch** endpoints (`/v1/audio/speech` and `/v1/voices/design`). Streaming endpoints always return PCM.
-
-Request a specific format by setting `response_format` in your batch TTS request. The server encodes the audio server-side and returns it in the requested format:
-
-**curl**
-```bash
-curl -X POST "https://api.murmr.dev/v1/audio/speech" \
-  -H "Authorization: Bearer $MURMR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "Generate in Opus format for efficient delivery.",
-    "voice": "voice_abc123",
-    "response_format": "opus"
-  }' \
-  --output output.opus
+Duration calculation:
+  duration_seconds = num_bytes / (sample_rate * 2)
+  duration_seconds = num_bytes / 48000
 ```
 
-Generate batch audio in a specific format using the Node.js SDK. The response contains binary audio in the requested format:
+## Base64 Decoding
 
-**TypeScript**
-```typescript
-import { MurmrClient, isSyncResponse } from '@murmr/sdk';
-import { writeFileSync } from 'node:fs';
+Streaming endpoints return PCM data as base64-encoded strings in JSON. Decode to raw bytes:
 
-const client = new MurmrClient({
-  apiKey: process.env.MURMR_API_KEY!,
-});
+**JavaScript**
 
-const result = await client.speech.create({
-  input: 'Generate in Opus format for efficient delivery.',
-  voice: 'voice_abc123',
-  response_format: 'opus',
-});
+```javascript
+// Decode base64 to PCM Int16Array
+function decodeBase64PCM(base64: string): Int16Array {
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
 
-if (isSyncResponse(result)) {
-  const buffer = Buffer.from(await result.arrayBuffer());
-  writeFileSync('output.opus', buffer);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+
+  // Convert to Int16Array (2 bytes per sample)
+  return new Int16Array(bytes.buffer);
+}
+
+// Usage with SSE chunk
+const data = JSON.parse(event.data.slice(6));  // Remove "data: "
+const pcmSamples = decodeBase64PCM(data.chunk);
+
+// Convert to Float32 for Web Audio API (-1.0 to +1.0)
+const float32 = new Float32Array(pcmSamples.length);
+for (let i = 0; i < pcmSamples.length; i++) {
+  float32[i] = pcmSamples[i] / 32768;
 }
 ```
 
-Generate audio in multiple formats using the Python SDK. Each `response_format` value produces a different encoding:
-
 **Python**
+
 ```python
-import os
-from murmr import MurmrClient
+import base64
+import struct
 
-with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-    # WAV (default)
-    result = client.speech.create_and_wait(
-        input="Hello world",
-        voice="voice_abc123def456",
-        response_format="wav",
-    )
+def decode_base64_pcm(base64_string: str) -> bytes:
+    """Decode base64 to raw PCM bytes."""
+    return base64.b64decode(base64_string)
 
-    # MP3
-    result = client.speech.create_and_wait(
-        input="Hello world",
-        voice="voice_abc123def456",
-        response_format="mp3",
-    )
-    with open("output.mp3", "wb") as f:
-        f.write(result.audio)
+def pcm_to_samples(pcm_bytes: bytes) -> list[int]:
+    """Convert PCM bytes to list of 16-bit signed integers."""
+    # '<' = little-endian, 'h' = signed short (2 bytes)
+    num_samples = len(pcm_bytes) // 2
+    return list(struct.unpack(f'<{num_samples}h', pcm_bytes))
 
-    # Opus
-    result = client.speech.create_and_wait(
-        input="Hello world",
-        voice="voice_abc123def456",
-        response_format="opus",
-    )
-    with open("output.opus", "wb") as f:
-        f.write(result.audio)
+# Usage
+pcm_bytes = decode_base64_pcm(chunk_data['chunk'])
+samples = pcm_to_samples(pcm_bytes)
+print(f"Decoded {len(samples)} samples")
 ```
 
-## PCM to WAV Conversion
+## Converting PCM to WAV
 
-Streaming endpoints return raw PCM without a header. To save streamed audio as a playable WAV file, collect all PCM chunks and prepend a 44-byte RIFF WAV header. The SDK provides a `createWavHeader()` utility for this.
+To save streaming audio as a WAV file, prepend a 44-byte header to the raw PCM data:
 
-Collect streamed PCM chunks and write them as a WAV file using the SDK's `createWavHeader()` utility:
+**JavaScript**
 
-**TypeScript**
-```typescript
-import { MurmrClient, createWavHeader } from '@murmr/sdk';
-import { writeFileSync } from 'node:fs';
+```javascript
+function pcmToWav(pcmData: ArrayBuffer, sampleRate = 24000): Blob {
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const byteRate = sampleRate * numChannels * bitsPerSample / 8;
+  const blockAlign = numChannels * bitsPerSample / 8;
+  const dataSize = pcmData.byteLength;
 
-const client = new MurmrClient({
-  apiKey: process.env.MURMR_API_KEY!,
-});
+  // Create 44-byte WAV header
+  const header = new ArrayBuffer(44);
+  const view = new DataView(header);
 
-const stream = await client.speech.stream({
-  input: 'Convert this PCM stream to a WAV file.',
-  voice: 'voice_abc123',
-});
+  // "RIFF" chunk descriptor
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);  // File size - 8
+  writeString(view, 8, 'WAVE');
 
-const pcmChunks: Buffer[] = [];
-for await (const chunk of stream) {
-  const audioData = chunk.audio || chunk.chunk;
-  if (audioData) {
-    pcmChunks.push(Buffer.from(audioData, 'base64'));
+  // "fmt " sub-chunk
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true);            // Subchunk1 size (16 for PCM)
+  view.setUint16(20, 1, true);             // Audio format (1 = PCM)
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+
+  // "data" sub-chunk
+  writeString(view, 36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  return new Blob([header, pcmData], { type: 'audio/wav' });
+}
+
+function writeString(view: DataView, offset: number, str: string) {
+  for (let i = 0; i < str.length; i++) {
+    view.setUint8(offset + i, str.charCodeAt(i));
   }
 }
 
-const pcm = Buffer.concat(pcmChunks);
-const header = createWavHeader(pcm.length);
-const wav = Buffer.concat([header, pcm]);
-writeFileSync('from-stream.wav', wav);
-```
+// Usage: Concatenate all PCM chunks, then convert
+const allPcmData = concatenateArrayBuffers(pcmChunks);
+const wavBlob = pcmToWav(allPcmData, 24000);
 
-Convert streamed PCM to WAV using Python's built-in `wave` module. Set the channel count, sample width, and frame rate to match murmr's native output (1 channel, 2 bytes, 24kHz):
+// Download
+const url = URL.createObjectURL(wavBlob);
+const a = document.createElement('a');
+a.href = url;
+a.download = 'audio.wav';
+a.click();
+```
 
 **Python**
+
 ```python
-import io
 import wave
-import os
-from murmr import MurmrClient
+import io
 
-with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-    with client.speech.stream(
-        input="Convert this streamed audio to WAV.",
-        voice="voice_abc123def456",
-    ) as stream:
-        pcm_chunks = [chunk.audio_bytes for chunk in stream]
+def pcm_to_wav(pcm_bytes: bytes, sample_rate: int = 24000) -> bytes:
+    """Convert raw PCM bytes to WAV format."""
+    buffer = io.BytesIO()
 
-    pcm_data = b"".join(pcm_chunks)
+    with wave.open(buffer, 'wb') as wav_file:
+        wav_file.setnchannels(1)         # Mono
+        wav_file.setsampwidth(2)          # 16-bit = 2 bytes
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm_bytes)
 
-    buf = io.BytesIO()
-    with wave.open(buf, "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)  # 16-bit = 2 bytes
-        wf.setframerate(24000)
-        wf.writeframes(pcm_data)
+    return buffer.getvalue()
 
-    with open("from_stream.wav", "wb") as f:
-        f.write(buf.getvalue())
+# Usage: Collect all PCM chunks from streaming
+pcm_chunks = []
+for chunk in stream_response():
+    pcm_chunks.append(base64.b64decode(chunk['chunk']))
+
+all_pcm = b''.join(pcm_chunks)
+wav_data = pcm_to_wav(all_pcm, sample_rate=24000)
+
+with open('output.wav', 'wb') as f:
+    f.write(wav_data)
 ```
 
-## File Size Estimation
+## Web Audio API Playback
 
-For 24kHz mono 16-bit audio:
+For real-time playback in the browser, schedule PCM chunks with the Web Audio API:
 
-| Duration | WAV/PCM | MP3 (128k) | Opus (64k) | AAC (64k) | FLAC |
-|----------|---------|------------|------------|-----------|------|
-| 10 sec | 480 KB | 160 KB | 80 KB | 80 KB | ~240 KB |
-| 1 min | 2.9 MB | 960 KB | 480 KB | 480 KB | ~1.4 MB |
-| 10 min | 28.8 MB | 9.6 MB | 4.8 MB | 4.8 MB | ~14 MB |
-| 1 hour | 172.8 MB | 57.6 MB | 28.8 MB | 28.8 MB | ~86 MB |
+```javascript
+const audioContext = new AudioContext();
+let nextStartTime = audioContext.currentTime;
 
-> Compressed format sizes vary by audio content. Speech typically compresses better than music. FLAC sizes are approximate.
+function playPCMChunk(pcmSamples: Float32Array, sampleRate: number) {
+  // Create audio buffer
+  const buffer = audioContext.createBuffer(1, pcmSamples.length, sampleRate);
+  buffer.getChannelData(0).set(pcmSamples);
+
+  // Create and schedule source
+  const source = audioContext.createBufferSource();
+  source.buffer = buffer;
+  source.connect(audioContext.destination);
+
+  // Schedule playback (gapless)
+  const startTime = Math.max(nextStartTime, audioContext.currentTime);
+  source.start(startTime);
+
+  // Update next start time
+  nextStartTime = startTime + buffer.duration;
+}
+
+// Important: Convert Int16 PCM to Float32 first
+function int16ToFloat32(pcm: Int16Array): Float32Array {
+  const float = new Float32Array(pcm.length);
+  for (let i = 0; i < pcm.length; i++) {
+    float[i] = pcm[i] / 32768;
+  }
+  return float;
+}
+```
+
+> **User gesture required:** AudioContext must be created or resumed after a user interaction (click, tap) due to browser autoplay policies.
+
+## File Size Calculation
+
+Estimate audio file sizes for capacity planning:
+
+```Formula
+PCM bytes = duration_seconds × sample_rate × bytes_per_sample
+PCM bytes = duration_seconds × 24000 × 2
+PCM bytes = duration_seconds × 48000
+
+WAV bytes = PCM bytes + 44 (header)
+
+Examples:
+  1 second  → 48 KB
+  10 seconds → 480 KB
+  1 minute  → 2.88 MB
+  10 minutes → 28.8 MB
+```
 
 ## See Also
 
-- [Speech Generation](./speech.md) -- Using `response_format` in batch requests
-- [Streaming](./streaming.md) -- PCM streaming format details
-- [Voice Design](./voicedesign.md) -- Batch voice design with format selection
+- [Saved Voices API](./speech.md) — Generate speech with response_format
+- [SSE Streaming](./streaming.md) — Receive PCM chunks via Server-Sent Events
+- [WebSocket Protocol](./websocket-protocol.md) — Real-time audio with binary mode

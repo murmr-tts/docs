@@ -1,43 +1,39 @@
 # Quickstart
 
-Get started with the murmr TTS API in under 5 minutes. Generate your first audio with a natural language voice description, stream audio, save a voice, and reuse it.
+Generate your first audio in under 5 minutes. This guide covers installation, authentication, and making your first API call.
 
 ## Prerequisites
 
-1. A murmr account -- [sign up free](https://murmr.dev/en/signup)
-2. An API key -- create one in your [dashboard](https://murmr.dev/en/dashboard/api-keys)
-3. Node.js 18+ (for the TypeScript SDK), Python 3.9+ (for the Python SDK), or any language that supports HTTP
+1. A murmr account — [sign up free](https://murmr.dev/en/signup)
+2. An API key — create one in your [dashboard](https://murmr.dev/en/dashboard/api-keys)
+3. Node.js 18+ (for the SDK) or any language that supports HTTP
 
-## Install the SDK
+## 1. Install the SDK
 
-**TypeScript**
+**npm**
+
 ```bash
 npm install @murmr/sdk
-# or: pnpm add @murmr/sdk / yarn add @murmr/sdk
 ```
 
-**Python**
-```bash
-pip install murmr
-```
-
-No SDK? You can use the REST API directly with any HTTP client.
-
-## Set Your API Key
-
-API keys follow the format `murmr_sk_live_xxx`. Set it as an environment variable so the SDK can find it automatically:
+**pnpm**
 
 ```bash
-export MURMR_API_KEY="murmr_sk_live_your_key_here"
+pnpm add @murmr/sdk
 ```
 
-> Never hardcode API keys. Always use environment variables. See the [Authentication guide](./authentication.md) for best practices.
+**yarn**
 
-## Initialize the Client
+```bash
+yarn add @murmr/sdk
+```
 
-Create a client instance with your API key. Reuse this client across your application:
+No SDK? You can use the [REST API directly](./voicedesign.md) with any HTTP client.
+
+## 2. Initialize the Client
 
 **TypeScript**
+
 ```typescript
 import { MurmrClient } from '@murmr/sdk';
 
@@ -47,19 +43,62 @@ const client = new MurmrClient({
 ```
 
 **Python**
+
 ```python
 import os
-from murmr import MurmrClient
+import requests
 
-client = MurmrClient(api_key=os.environ["MURMR_API_KEY"])
+API_KEY = os.environ["MURMR_API_KEY"]
+BASE_URL = "https://api.murmr.dev"
+HEADERS = {
+    "Authorization": f"Bearer {API_KEY}",
+    "Content-Type": "application/json",
+}
 ```
 
-## Generate Audio with Voice Design
+> **⚠️ Keep your API key secret**
+> Never expose your API key in client-side code or commit it to version control. Use environment variables.
 
-Describe any voice in natural language and generate speech in a single call. This is murmr's core feature -- no presets, no cloning, just describe what you want.
+## 3. Design a Voice and Generate Audio
 
-**curl**
-```bash
+Describe any voice in natural language and generate audio in a single call. This is murmr's core feature — no presets, no cloning, just describe what you want.
+
+**TypeScript**
+
+```typescript
+import { writeFileSync } from 'fs';
+
+const audio = await client.voices.design({
+  input: "Welcome to our app. Let me show you around.",
+  voice_description: "A warm, friendly female voice, calm and clear",
+  language: "English",
+});
+
+writeFileSync("welcome.wav", Buffer.from(audio));
+console.log("Audio saved to welcome.wav");
+```
+
+**Python**
+
+```python
+response = requests.post(
+    f"{BASE_URL}/v1/voices/design",
+    headers=HEADERS,
+    json={
+        "text": "Welcome to our app. Let me show you around.",
+        "voice_description": "A warm, friendly female voice, calm and clear",
+        "language": "English",
+    },
+)
+
+with open("welcome.wav", "wb") as f:
+    f.write(response.content)
+print("Audio saved to welcome.wav")
+```
+
+**cURL**
+
+```curl
 curl -X POST "https://api.murmr.dev/v1/voices/design" \
   -H "Authorization: Bearer $MURMR_API_KEY" \
   -H "Content-Type: application/json" \
@@ -71,48 +110,54 @@ curl -X POST "https://api.murmr.dev/v1/voices/design" \
   --output welcome.wav
 ```
 
+## 4. Stream Audio (Low Latency)
+
+For real-time playback, use the streaming endpoint. Audio chunks arrive via Server-Sent Events as they're generated — no waiting for the full file.
+
 **TypeScript**
+
 ```typescript
-import { MurmrClient } from '@murmr/sdk';
-import { writeFileSync } from 'node:fs';
-
-const client = new MurmrClient({
-  apiKey: process.env.MURMR_API_KEY!,
+const response = await fetch("https://api.murmr.dev/v1/voices/design/stream", {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${process.env.MURMR_API_KEY}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    text: "Hello! This audio is streaming to you in real time.",
+    voice_description: "A confident male narrator voice",
+    language: "English",
+  }),
 });
 
-const wav = await client.voices.design({
-  input: 'Welcome to our app. Let me show you around.',
-  voice_description: 'A warm, friendly female voice, calm and clear',
-  language: 'English',
-});
+const reader = response.body!.getReader();
+const decoder = new TextDecoder();
 
-writeFileSync('welcome.wav', wav);
-console.log('Audio saved to welcome.wav');
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+
+  for (const line of decoder.decode(value).split("\n")) {
+    if (!line.startsWith("data: ")) continue;
+    const data = JSON.parse(line.slice(6));
+
+    if (data.chunk) {
+      // Base64-encoded PCM audio chunk (24kHz, 16-bit, mono)
+      const pcm = Buffer.from(data.chunk, "base64");
+      console.log(`Received ${pcm.length} bytes`);
+    }
+
+    if (data.done) {
+      console.log(`Complete in ${data.total_time_ms}ms`);
+      console.log(`Time to first chunk: ${data.first_chunk_latency_ms}ms`);
+    }
+  }
+}
 ```
 
-**Python**
-```python
-import os
-from murmr import MurmrClient
+**cURL**
 
-with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-    wav = client.voices.design(
-        input="Welcome to our app. Let me show you around.",
-        voice_description="A warm, friendly female voice, calm and clear",
-        language="English",
-    )
-
-    with open("welcome.wav", "wb") as f:
-        f.write(wav)
-    print("Audio saved to welcome.wav")
-```
-
-## Stream Audio (Low Latency)
-
-For real-time playback, use the streaming endpoint. Audio chunks arrive via Server-Sent Events as they are generated. First chunk typically arrives in ~450ms.
-
-**curl**
-```bash
+```curl
 curl -X POST "https://api.murmr.dev/v1/voices/design/stream" \
   -H "Authorization: Bearer $MURMR_API_KEY" \
   -H "Content-Type: application/json" \
@@ -123,118 +168,93 @@ curl -X POST "https://api.murmr.dev/v1/voices/design/stream" \
   }'
 ```
 
+> **💡 ~450ms time-to-first-chunk**
+> Streaming starts delivering audio in ~450ms. See the [SSE Streaming guide](./streaming.md) for browser playback with Web Audio API.
+
+## 5. Save a Voice for Reuse
+
+Found a voice you like? Save it so every request sounds the same. Saved voices use voice embeddings — they're fast and consistent.
+
 **TypeScript**
+
 ```typescript
-import { MurmrClient } from '@murmr/sdk';
-import { createWriteStream } from 'node:fs';
-
-const client = new MurmrClient({
-  apiKey: process.env.MURMR_API_KEY!,
+// Step 1: Design a voice and get the audio
+const audio = await client.voices.design({
+  input: "Testing this voice for my project.",
+  voice_description: "A calm, professional narrator",
 });
 
-const stream = await client.voices.designStream({
-  input: 'Streaming delivers audio with minimal latency.',
-  voice_description: 'A calm female voice, clear and articulate',
+// Step 2: Save it via REST API
+const response = await fetch("https://murmr.dev/api/v1/voices", {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${process.env.MURMR_API_KEY}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    name: "Project Narrator",
+    description: "Calm, professional narrator for product videos",
+    audio: Buffer.from(audio).toString("base64"),
+    language: "English",
+  }),
 });
 
-const file = createWriteStream('streamed.pcm');
-
-for await (const chunk of stream) {
-  const audioData = chunk.audio || chunk.chunk;
-  if (audioData) {
-    file.write(Buffer.from(audioData, 'base64'));
-  }
-  if (chunk.done) {
-    console.log(`Stream complete in ${chunk.total_time_ms}ms`);
-  }
-}
-
-file.end();
+const voice = await response.json();
+console.log(`Saved as ${voice.id}`);
+// e.g. "voice_abc123"
 ```
 
 **Python**
-```python
-import os
-from murmr import MurmrClient
 
-with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-    with client.voices.design_stream(
-        input="Streaming delivers audio with minimal latency.",
-        voice_description="A calm female voice, clear and articulate",
-        language="English",
-    ) as stream:
-        for chunk in stream:
-            pcm_data = chunk.audio_bytes
-            print(f"Chunk {chunk.chunk_index}: {len(pcm_data)} bytes")
+```python
+import base64
+
+# Step 1: Design a voice and get the audio
+response = requests.post(
+    f"{BASE_URL}/v1/voices/design",
+    headers=HEADERS,
+    json={
+        "text": "Testing this voice for my project.",
+        "voice_description": "A calm, professional narrator",
+    },
+)
+audio = response.content
+
+# Step 2: Save it
+save_response = requests.post(
+    f"{BASE_URL}/api/v1/voices",
+    headers=HEADERS,
+    json={
+        "name": "Project Narrator",
+        "description": "Calm, professional narrator for product videos",
+        "audio": base64.b64encode(audio).decode(),
+        "language": "English",
+    },
+)
+voice_id = save_response.json()["id"]
+print(f"Saved as {voice_id}")
 ```
 
-> Streamed audio is raw PCM (24kHz, 16-bit, mono). See the [Streaming guide](./streaming.md) for details on collecting chunks into a WAV file.
+## 6. Generate with a Saved Voice
 
-## Save a Voice for Reuse
-
-Found a voice you like? Save it so every request sounds the same. Saved voices use voice embeddings -- they are fast and consistent.
+Once saved, use the voice ID in any speech request. Every call with the same voice ID produces the same voice.
 
 **TypeScript**
+
 ```typescript
-import { MurmrClient } from '@murmr/sdk';
+import { writeFileSync } from 'fs';
 
-const client = new MurmrClient({
-  apiKey: process.env.MURMR_API_KEY!,
+const result = await client.speech.createAndWait({
+  input: "This is my saved voice. It sounds the same every time.",
+  voice: "voice_abc123", // Your saved voice ID
 });
 
-// Step 1: Generate audio with voice design
-const inputText = 'This is my reference audio for saving a voice.';
-const wav = await client.voices.design({
-  input: inputText,
-  voice_description: 'A friendly, upbeat female voice',
-});
-
-// Step 2: Save the voice
-const saved = await client.voices.save({
-  name: 'Friendly Female',
-  description: 'A friendly, upbeat female voice for product demos',
-  audio: wav,
-  ref_text: inputText,
-  language: 'English',
-});
-
-console.log(`Voice saved: ${saved.id}`);
-// Output: Voice saved: voice_a1b2c3d4e5f6
+writeFileSync("output.wav", Buffer.from(result.audio_base64!, "base64"));
 ```
 
-**Python**
-```python
-import os
-from murmr import MurmrClient
+**cURL**
 
-with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-    # Step 1: Generate audio with a voice description
-    text = "This is a sample of my voice for saving."
-    wav = client.voices.design(
-        input=text,
-        voice_description="A calm, professional male voice",
-        language="English",
-    )
-
-    # Step 2: Save the voice
-    saved = client.voices.save(
-        name="Professional Narrator",
-        audio=wav,
-        description="A calm, professional male voice",
-        ref_text=text,
-        language="English",
-    )
-
-    print(f"Voice saved: {saved.id}")
-    # Output: Voice saved: voice_abc123def456
-```
-
-## Generate with a Saved Voice
-
-Use the saved voice ID for consistent, repeatable speech generation.
-
-**curl**
-```bash
+```curl
 curl -X POST "https://api.murmr.dev/v1/audio/speech" \
   -H "Authorization: Bearer $MURMR_API_KEY" \
   -H "Content-Type: application/json" \
@@ -245,75 +265,10 @@ curl -X POST "https://api.murmr.dev/v1/audio/speech" \
   --output output.wav
 ```
 
-**TypeScript**
-```typescript
-import { MurmrClient, isSyncResponse } from '@murmr/sdk';
-import { writeFileSync } from 'node:fs';
-
-const client = new MurmrClient({
-  apiKey: process.env.MURMR_API_KEY!,
-});
-
-// Batch generation (returns complete audio)
-const result = await client.speech.create({
-  input: 'Every call with this voice ID sounds the same.',
-  voice: 'voice_a1b2c3d4e5f6',
-});
-
-if (isSyncResponse(result)) {
-  const buffer = Buffer.from(await result.arrayBuffer());
-  writeFileSync('consistent.wav', buffer);
-}
-
-// Or stream for lower latency
-const stream = await client.speech.stream({
-  input: 'Streaming with a saved voice is just as easy.',
-  voice: 'voice_a1b2c3d4e5f6',
-});
-
-for await (const chunk of stream) {
-  if (chunk.audio || chunk.chunk) {
-    // Process PCM audio chunk
-  }
-}
-```
-
-**Python**
-```python
-import os
-from murmr import MurmrClient
-
-with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-    # Batch generation (returns complete audio)
-    result = client.speech.create_and_wait(
-        input="Your order has been confirmed and will arrive tomorrow.",
-        voice="voice_abc123def456",
-        language="English",
-        response_format="mp3",
-    )
-
-    with open("confirmation.mp3", "wb") as f:
-        f.write(result.audio)
-
-    # Streaming generation (low latency)
-    with client.speech.stream(
-        input="Your order has been confirmed and will arrive tomorrow.",
-        voice="voice_abc123def456",
-        language="English",
-    ) as stream:
-        for chunk in stream:
-            pcm_data = chunk.audio_bytes
-            # Process audio chunks as they arrive
-```
-
 ## Next Steps
 
-| Topic | Description |
-|-------|-------------|
-| [Authentication](./authentication.md) | API key management and security |
-| [Voice Design](./voicedesign.md) | Advanced voice description techniques |
-| [Speech Generation](./speech.md) | Saved voice generation deep dive |
-| [Streaming](./streaming.md) | SSE streaming deep dive |
-| [Voices](./voices.md) | Save, list, and delete voices |
-| [Audio Formats](./audio-formats.md) | WAV, MP3, Opus, and more |
-| [Error Handling](./errors.md) | Robust error handling patterns |
+- [Node.js SDK Reference](./sdk-reference-node.md) — Full API reference with long-form audio, async jobs, and error handling
+- [VoiceDesign API](./voicedesign.md) — Detailed endpoint reference with all parameters
+- [Crafting Voices](./voice-crafting.md) — Tips for writing effective voice descriptions
+- [Real-time WebSocket](./realtime.md) — Build voice agents with ~460ms latency
+- [OpenAI Migration](./openai-migration.md) — Switching from OpenAI TTS? Start here

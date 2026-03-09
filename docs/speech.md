@@ -1,46 +1,54 @@
-# Speech Generation
+# Saved Voices API
 
-Generate speech from text using a saved voice. murmr provides two speech endpoints: a batch endpoint that returns complete audio files, and a streaming endpoint that delivers audio chunks via Server-Sent Events (SSE) for low-latency playback.
+Generate speech using voices you've saved from VoiceDesign. Guaranteed consistency across all your content.
+
+> **ℹ️ Creating Saved Voices**
+> First, create a voice with [VoiceDesign](./voicedesign.md), then save it using [POST /api/v1/voices](./voices.md). Use the returned voice ID (e.g., `voice_abc123`) with this endpoint.
 
 ## Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/v1/audio/speech` | POST | Batch generation -- returns audio (200) by default, or 202 with job ID when `webhook_url` is set |
-| `/v1/audio/speech/stream` | POST | Streaming generation -- low-latency SSE chunks |
+`POST /v1/audio/speech`
 
-> First, create a voice with [VoiceDesign](./voicedesign.md), then save it using [POST /v1/voices](./voices.md). Use the returned voice ID (e.g., `voice_abc123`) with these endpoints.
+Batch endpoint — returns [202 with job ID](./async-jobs.md), poll for audio
+
+`POST /v1/audio/speech/stream`
+
+Streaming endpoint — low-latency SSE chunks
+
+> **⚠️ Different response models**
+> - **Batch** (`/v1/audio/speech`): Always returns `202 Accepted` with a job ID. Poll `GET /v1/jobs/{jobId}` to retrieve the audio. Supports `response_format` and `webhook_url`.
+> - **Streaming** (`/v1/audio/speech/stream`): Returns SSE with base64 PCM chunks for real-time playback.
+
+> **💡 Building a real-time app?**
+> The batch endpoint is optimized for bulk generation and file exports, not low-latency playback. If you need audio as fast as possible (voice agents, live previews, interactive apps), use [`/v1/audio/speech/stream`](./streaming.md) instead — it delivers first audio in ~450ms.
 
 ## Request Parameters
 
+Send a JSON body with the following parameters:
+
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `text` | string | Yes | -- | Text to synthesize. Maximum 4,096 characters. |
-| `voice` | string | Yes* | -- | Saved voice ID (e.g., `voice_abc123`). |
-| `voice_clone_prompt` | string | No | -- | Base64-encoded embedding data. Overrides `voice` if both provided. |
-| `language` | string | No | `Auto` | Language name. SDKs default to `English`; raw API defaults to `Auto`. See [Languages](./languages.md). |
-| `instruct` | string | No | -- | Prosody/style instruction for the saved voice (e.g., "speak slowly and softly"). Only available for saved voices, not Voice Design. |
-| `response_format` | string | No | `wav` | Output format (batch only): `mp3`, `opus`, `aac`, `flac`, `wav`, `pcm`. See [Audio Formats](./audio-formats.md). |
-| `webhook_url` | string | No | -- | HTTPS URL for async delivery (batch only). Returns 202 with job ID. |
-| `input` | string | -- | -- | Alias for `text` (OpenAI API compatibility). If both are provided, `text` takes precedence. |
+| `text` | string | Yes | -- | The text to synthesize. Maximum 4,096 characters. |
+| `voice` | string | No | -- | Saved voice ID (e.g., "voice_abc123"). The API resolves this to the stored voice embeddings automatically. Either voice or voice_clone_prompt is required. |
+| `voice_clone_prompt` | string | No | -- | Base64-encoded voice embedding data. Optional — only needed if you store and manage embeddings yourself. Most users should use voice instead. |
+| `language` | string | No | Auto | Output language: English, Spanish, Portuguese, German, French, Italian, Chinese, Japanese, Korean, Russian, or "Auto" |
+| `response_format` | string | No | wav | Audio format (batch endpoint only): mp3, opus, aac, flac, wav (default), or pcm. See Audio Formats. |
+| `webhook_url` | string | No | -- | HTTPS URL for async delivery (batch endpoint only). When provided, completed audio is POSTed to this URL. See Async Jobs. |
+| `input` | string | No | -- | Alias for text (OpenAI API compatibility). If both are provided, text takes precedence. |
 
-> *Either `voice` or `voice_clone_prompt` is required. If you pass `voice_clone_prompt`, the `voice` parameter is ignored.
+> **💡 Format your text for better prosody**
+> Newlines in your input text act as pause cues — `\n` creates a sentence-level breath pause, `\n\n` creates a paragraph-level pause. See the [Text Formatting Guide](./text-formatting.md) for best practices on natural-sounding output.
 
-> Streaming always returns raw PCM audio (24kHz, 16-bit, mono). The `response_format` parameter is not supported for streaming.
+## Batch Example
 
-> **Building a real-time app?** The batch endpoint is optimized for bulk generation and file exports, not low-latency playback. If you need audio as fast as possible (voice agents, live previews, interactive apps), use `/v1/audio/speech/stream` instead -- it delivers first audio in ~450ms. See [SSE Streaming](./streaming.md).
+The batch endpoint returns a `202 Accepted` response with a job ID. Poll for the audio result.
 
-## Batch Generation
+**cURL**
 
-The batch endpoint (`POST /v1/audio/speech`) returns HTTP 200 with binary audio by default. If you provide a `webhook_url`, it returns HTTP 202 with a job ID instead -- see [Async Jobs](./async-jobs.md) for polling and webhook details.
-
-Submit a batch TTS job via curl. Returns a JSON job object with an ID for polling, or binary audio directly if the server can respond synchronously:
-
-**curl**
-```bash
+```curl
 # Submit batch job
 curl -X POST "https://api.murmr.dev/v1/audio/speech" \
-  -H "Authorization: Bearer $MURMR_API_KEY" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "text": "Welcome back to episode 2 of our podcast.",
@@ -51,193 +59,180 @@ curl -X POST "https://api.murmr.dev/v1/audio/speech" \
 
 # Poll for result (returns binary audio when complete)
 curl "https://api.murmr.dev/v1/jobs/job_a1b2c3d4e5f6g7h8" \
-  -H "Authorization: Bearer $MURMR_API_KEY" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
   --output episode2.mp3
 ```
 
-Three ways to use batch generation with the Node.js SDK: synchronous (default), poll-and-wait, or async with webhook:
+**Python**
 
-**TypeScript**
-```typescript
-import { MurmrClient, isSyncResponse } from '@murmr/sdk';
-import { writeFileSync } from 'node:fs';
-
-const client = new MurmrClient({
-  apiKey: process.env.MURMR_API_KEY!,
-});
-
-// Option 1: Sync -- returns audio directly (default, no webhook_url)
-const result = await client.speech.create({
-  input: 'Hello from the murmr TTS API.',
-  voice: 'voice_abc123',
-  response_format: 'mp3',
-});
-
-if (isSyncResponse(result)) {
-  const buffer = Buffer.from(await result.arrayBuffer());
-  writeFileSync('output.mp3', buffer);
-}
-
-// Option 2: Poll until done (convenience wrapper)
-const waited = await client.speech.createAndWait({
-  input: 'Wait for the audio to be ready.',
-  voice: 'voice_abc123',
-  response_format: 'wav',
-  onPoll: (status) => console.log(`Status: ${status.status}`),
-});
-
-// Option 3: Async with webhook
-const async_result = await client.speech.create({
-  input: 'This will be processed asynchronously.',
-  voice: 'voice_abc123',
-  webhook_url: 'https://yourapp.com/webhooks/tts',
-});
-```
-
-**Python (sync)**
 ```python
-import os
-from murmr import MurmrClient
+import time
+import requests
 
-with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-    result = client.speech.create_and_wait(
-        input="Your package has been shipped and will arrive by Friday.",
-        voice="voice_abc123def456",
-        language="English",
-        response_format="mp3",
+# Submit batch job
+response = requests.post(
+    "https://api.murmr.dev/v1/audio/speech",
+    headers={"Authorization": "Bearer YOUR_API_KEY"},
+    json={
+        "text": "Welcome back to episode 2 of our podcast.",
+        "voice": "voice_abc123",
+        "response_format": "mp3"
+    }
+)
+
+job = response.json()
+job_id = job["id"]
+print(f"Submitted: {job_id}")
+
+# Poll until complete
+while True:
+    status = requests.get(
+        f"https://api.murmr.dev/v1/jobs/{job_id}",
+        headers={"Authorization": "Bearer YOUR_API_KEY"}
     )
 
-    with open("notification.mp3", "wb") as f:
-        f.write(result.audio)
+    # Completed: returns binary audio
+    if status.headers.get("Content-Type", "").startswith("audio/"):
+        with open("episode2.mp3", "wb") as f:
+            f.write(status.content)
+        print("Audio saved!")
+        break
 
-    print(f"Duration: {result.duration_ms}ms")
+    # Still in progress or failed
+    data = status.json()
+    if data["status"] == "failed":
+        print(f"Failed: {data.get('error')}")
+        break
+
+    print(f"Status: {data['status']}...")
+    time.sleep(3)
 ```
 
-**Python (async)**
-```python
-import asyncio
-import os
-from murmr import AsyncMurmrClient
+**JavaScript**
 
-async def main():
-    async with AsyncMurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-        result = await client.speech.create(
-            input="Your package has been shipped.",
-            voice="voice_abc123def456",
-            response_format="wav",
-        )
+```javascript
+// Submit batch job
+const submitResp = await fetch("https://api.murmr.dev/v1/audio/speech", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer YOUR_API_KEY",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    text: "Welcome back to episode 2 of our podcast.",
+    voice: "voice_abc123",
+    response_format: "mp3"
+  })
+});
+const job = await submitResp.json();
 
-        with open("notification.wav", "wb") as f:
-            f.write(result.audio)
+// Poll until complete
+async function pollJob(jobId) {
+  while (true) {
+    const resp = await fetch(`https://api.murmr.dev/v1/jobs/${jobId}`, {
+      headers: { "Authorization": "Bearer YOUR_API_KEY" }
+    });
 
-asyncio.run(main())
+    // Completed: returns binary audio
+    const ct = resp.headers.get("Content-Type") || "";
+    if (ct.startsWith("audio/")) {
+      return await resp.blob();
+    }
+
+    const data = await resp.json();
+    if (data.status === "failed") throw new Error(data.error);
+
+    await new Promise(r => setTimeout(r, 3000));
+  }
+}
+
+const audioBlob = await pollJob(job.id);
+const audio = new Audio(URL.createObjectURL(audioBlob));
+audio.play();
 ```
 
-## Streaming Generation
+## Streaming Example
 
-The streaming endpoint (`POST /v1/audio/speech/stream`) returns audio chunks via SSE. First chunk latency is typically under 450ms.
+For low-latency playback, use the streaming endpoint. Audio arrives as Server-Sent Events with base64 PCM chunks.
 
-Stream saved-voice audio via curl. The response is an SSE `text/event-stream` with base64-encoded PCM chunks:
+**cURL**
 
-**curl**
-```bash
+```curl
 curl -X POST "https://api.murmr.dev/v1/audio/speech/stream" \
-  -H "Authorization: Bearer $MURMR_API_KEY" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
-  -H "Accept: text/event-stream" \
   -d '{
-    "text": "Stream audio for real-time playback.",
+    "text": "Hello, this is streaming audio.",
     "voice": "voice_abc123"
   }'
 ```
 
-Stream audio from a saved voice and process each PCM chunk as it arrives. Typically ~450ms to first chunk:
+**JavaScript**
 
-**TypeScript**
-```typescript
-import { MurmrClient } from '@murmr/sdk';
-
-const client = new MurmrClient({
-  apiKey: process.env.MURMR_API_KEY!,
+```javascript
+const response = await fetch("https://api.murmr.dev/v1/audio/speech/stream", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer YOUR_API_KEY",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    text: "Hello, this is streaming audio.",
+    voice: "voice_abc123"
+  })
 });
 
-const stream = await client.speech.stream({
-  input: 'Stream audio for real-time playback.',
-  voice: 'voice_abc123',
-});
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
 
-for await (const chunk of stream) {
-  const audioData = chunk.audio || chunk.chunk;
-  if (audioData) {
-    const pcm = Buffer.from(audioData, 'base64');
-    // Send to audio player, write to file, etc.
-  }
-  if (chunk.done) {
-    console.log(`Done in ${chunk.total_time_ms}ms`);
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+
+  const chunk = decoder.decode(value);
+  for (const line of chunk.split("\n")) {
+    if (line.startsWith("data: ")) {
+      const data = JSON.parse(line.slice(6));
+      if (data.chunk) {
+        // base64 PCM int16 at 24kHz mono
+        console.log(`Chunk ${data.chunk_index}`);
+      }
+      if (data.done) {
+        console.log(`Complete: ${data.total_chunks} chunks`);
+      }
+    }
   }
 }
 ```
 
-**Python (sync)**
-```python
-import os
-from murmr import MurmrClient
-
-with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-    with client.speech.stream(
-        input="Real-time audio streaming for interactive applications.",
-        voice="voice_abc123def456",
-        language="English",
-    ) as stream:
-        pcm_chunks = []
-        for chunk in stream:
-            pcm_chunks.append(chunk.audio_bytes)
-
-            if chunk.first_chunk_latency_ms is not None:
-                print(f"Time to first chunk: {chunk.first_chunk_latency_ms:.0f}ms")
-
-            if chunk.done:
-                print(f"Total time: {chunk.total_time_ms:.0f}ms")
-```
-
-**Python (async)**
-```python
-import asyncio
-import os
-from murmr import AsyncMurmrClient
-
-async def main():
-    async with AsyncMurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-        async with client.speech.stream(
-            input="Real-time audio streaming for interactive applications.",
-            voice="voice_abc123def456",
-        ) as stream:
-            async for chunk in stream:
-                pcm_data = chunk.audio_bytes
-                # Send to audio player or write to buffer
-
-asyncio.run(main())
-```
+See [SSE Streaming](./streaming.md) for complete integration guide with Web Audio API playback.
 
 ## OpenAI Compatibility
 
-This endpoint is compatible with OpenAI's `/v1/audio/speech` API. The `input` parameter is accepted as an alias for `text`. See the [OpenAI Migration Guide](https://murmr.dev/en/docs/openai) for details.
+This endpoint is compatible with OpenAI's `/v1/audio/speech` API. The `input` parameter is accepted as an alias for `text`. See the [OpenAI Migration Guide](./openai-migration.md) for details.
 
-## Error Codes
+## Error Responses
 
-| Status | Meaning | Common Causes |
-|--------|---------|---------------|
-| 400 | Bad Request | Missing `text`, text exceeds 4,096 chars, invalid `response_format` |
+```JSON
+{
+  "error": "Saved voice not found: voice_abc123"
+}
+```
+
+| Status | Error | Description |
+|--------|-------|-------------|
+| 400 | Bad Request | Missing text, text too long (>4096 chars), invalid response_format |
 | 401 | Unauthorized | Missing or invalid API key |
-| 404 | Not Found | Voice ID does not exist or belongs to another user |
-| 429 | Rate Limited | Monthly character limit exceeded or too many concurrent requests |
+| 404 | Not Found | Saved voice not found or doesn't belong to your account |
+| 429 | Rate Limit Exceeded | Monthly character quota exceeded, or server at capacity |
 
-See the [Errors guide](./errors.md) for detailed error handling.
+See [Error Reference](./errors.md) for complete error handling guidance.
 
 ## See Also
 
-- [Voice Design](./voicedesign.md) -- Generate with a voice description instead of a saved voice
-- [Streaming](./streaming.md) -- SSE format details and browser playback
-- [Voices](./voices.md) -- Save, list, and delete voices
-- [Audio Formats](./audio-formats.md) -- Format comparison and conversion
-- [Text Formatting](./text-formatting.md) -- Newlines, pauses, and prosody best practices
+- [VoiceDesign API](./voicedesign.md) — Create voices from descriptions
+- [Voice Management](./voices.md) — Save, list, delete voices
+- [Text Formatting](./text-formatting.md) — Newlines, pauses, and prosody best practices
+- [SSE Streaming](./streaming.md) — Low-latency streaming integration
+- [Audio Formats](./audio-formats.md) — Supported formats and encoding specs
+- [Async Jobs](./async-jobs.md) — Job polling and webhook delivery

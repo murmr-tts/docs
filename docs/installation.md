@@ -1,257 +1,486 @@
-# Installation
+# JavaScript Client
 
-Get started with the murmr TTS API. Choose your integration method: REST API with any HTTP client, or use the official Node.js or Python SDK for built-in streaming, long-form chunking, and error recovery.
+Connect to the real-time WebSocket endpoint from the browser. No dependencies — just the native WebSocket API and Web Audio.
 
-## REST API (No SDK)
+## Quick Start
 
-You only need an API key and an HTTP client. No SDK installation required.
+**VoiceDesign**
 
-### Get Your API Key
+```javascript
+const ws = new WebSocket('wss://api.murmr.dev/v1/realtime');
 
-Sign up at [murmr.dev](https://murmr.dev) to get your API key. Keys follow the format `murmr_sk_live_xxx`. The Free plan includes 50,000 characters per month.
+ws.onopen = () => {
+  ws.send(JSON.stringify({
+    type: 'config',
+    api_key: 'murmr_sk_live_xxx',
+    voice_description: 'A warm, friendly narrator',
+    language: 'English'
+  }));
+};
 
-```bash
-export MURMR_API_KEY="murmr_sk_live_your_key_here"
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+
+  if (msg.type === 'config_ack') {
+    // Ready — send text and flush to trigger generation
+    ws.send(JSON.stringify({ type: 'text', text: 'Hello, world!' }));
+    ws.send(JSON.stringify({ type: 'flush' }));
+  }
+
+  if (msg.type === 'audio') {
+    // msg.chunk is base64 PCM (24kHz, 16-bit, mono)
+    playAudioChunk(msg.chunk, msg.sample_rate);
+  }
+
+  if (msg.type === 'done') {
+    console.log('TTFC:', msg.first_chunk_latency_ms, 'ms');
+  }
+};
 ```
 
-### Verify with curl
+**Saved Voice**
 
-Test your API key by generating a short audio clip. If you hear audio, your key is working:
+```javascript
+const ws = new WebSocket('wss://api.murmr.dev/v1/realtime');
 
-```bash
-curl -X POST https://api.murmr.dev/v1/voices/design \
-  -H "Authorization: Bearer $MURMR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "Hello from murmr!",
-    "voice_description": "A warm, friendly narrator",
-    "language": "English"
-  }' \
-  --output hello.wav
+ws.onopen = () => {
+  // Use voice_clone_prompt instead of voice_description
+  // Get prompt_data from GET /api/v1/voices (see Voice Management docs)
+  ws.send(JSON.stringify({
+    type: 'config',
+    api_key: 'murmr_sk_live_xxx',
+    voice_clone_prompt: savedVoice.prompt_data,  // Base64 tensor data
+    language: 'English'
+  }));
+};
 
-# Play the audio
-afplay hello.wav    # macOS
-aplay hello.wav     # Linux
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+
+  if (msg.type === 'config_ack') {
+    ws.send(JSON.stringify({ type: 'text', text: 'Hello from a saved voice!' }));
+    ws.send(JSON.stringify({ type: 'flush' }));
+  }
+
+  if (msg.type === 'audio') {
+    playAudioChunk(msg.chunk, msg.sample_rate);
+  }
+};
 ```
 
-If you hear audio, your API key is working. See the [API reference](./api-reference.md) for all available endpoints.
+## Web Audio Playback
 
-## Node.js SDK (@murmr/sdk)
+Decode base64 PCM chunks and schedule seamless playback with the Web Audio API:
 
-TypeScript-first with zero runtime dependencies. Handles auth, streaming, long-form chunking, and error recovery automatically.
+```javascript
+class AudioPlayer {
+  constructor(sampleRate = 24000) {
+    this.ctx = new AudioContext({ sampleRate });
+    this.nextTime = 0;
+  }
 
-### Requirements
+  playChunk(base64Chunk) {
+    // Decode base64 → Uint8Array → Int16Array
+    const binary = atob(base64Chunk);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    const int16 = new Int16Array(bytes.buffer);
 
-- **Node.js 18+** (uses native `fetch` and `AbortSignal.timeout`)
-- A **murmr API key** ([sign up at murmr.dev](https://murmr.dev))
+    // Convert Int16 → Float32 for Web Audio (-1.0 to 1.0)
+    const float32 = new Float32Array(int16.length);
+    for (let i = 0; i < int16.length; i++) {
+      float32[i] = int16[i] / 32768;
+    }
 
-### Install
+    // Create audio buffer and schedule playback
+    const buffer = this.ctx.createBuffer(1, float32.length, this.ctx.sampleRate);
+    buffer.getChannelData(0).set(float32);
 
-```bash
-npm install @murmr/sdk
+    const source = this.ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(this.ctx.destination);
+
+    // Schedule after previous chunk for gapless playback
+    const startTime = Math.max(this.ctx.currentTime, this.nextTime);
+    source.start(startTime);
+    this.nextTime = startTime + buffer.duration;
+  }
+
+  // Play raw PCM bytes directly (binary mode)
+  playBinaryChunk(arrayBuffer) {
+    const int16 = new Int16Array(arrayBuffer);
+    const float32 = new Float32Array(int16.length);
+    for (let i = 0; i < int16.length; i++) {
+      float32[i] = int16[i] / 32768;
+    }
+
+    const buffer = this.ctx.createBuffer(1, float32.length, this.ctx.sampleRate);
+    buffer.getChannelData(0).set(float32);
+
+    const source = this.ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(this.ctx.destination);
+
+    const startTime = Math.max(this.ctx.currentTime, this.nextTime);
+    source.start(startTime);
+    this.nextTime = startTime + buffer.duration;
+  }
+}
 ```
 
-Or with your preferred package manager:
+## Binary Mode
 
-```bash
-pnpm add @murmr/sdk
-yarn add @murmr/sdk
+Binary mode sends raw PCM bytes instead of base64 JSON, saving ~50-100ms per chunk. Enable it after receiving `config_ack`:
+
+```javascript
+const player = new AudioPlayer(24000);
+const ws = new WebSocket('wss://api.murmr.dev/v1/realtime');
+ws.binaryType = 'arraybuffer';  // Required for binary frames
+
+ws.onopen = () => {
+  ws.send(JSON.stringify({
+    type: 'config',
+    api_key: API_KEY,
+    voice_description: 'A warm narrator',
+  }));
+};
+
+ws.onmessage = (event) => {
+  if (event.data instanceof ArrayBuffer) {
+    // Binary frame — raw PCM audio
+    player.playBinaryChunk(event.data);
+    return;
+  }
+
+  // Text frame — JSON control message
+  const msg = JSON.parse(event.data);
+
+  if (msg.type === 'config_ack') {
+    // Enable binary mode
+    ws.send(JSON.stringify({ type: 'binary_mode' }));
+  }
+
+  if (msg.type === 'binary_mode_ack') {
+    // Binary mode active — send text
+    ws.send(JSON.stringify({ type: 'text', text: 'Hello in binary mode!' }));
+    ws.send(JSON.stringify({ type: 'flush' }));
+  }
+
+  if (msg.type === 'done') {
+    console.log('TTFC:', msg.first_chunk_latency_ms, 'ms');
+  }
+
+  if (msg.type === 'error') {
+    console.error('Error:', msg.message);
+  }
+};
 ```
 
-### Set Your API Key
+> Set `ws.binaryType = 'arraybuffer'` before connecting. The default `blob` type requires an extra async conversion step.
 
-Store your API key as an environment variable. Never hardcode it.
+## LLM Integration
 
-```bash
-# .env or shell profile
-export MURMR_API_KEY="murmr_sk_live_..."
+Pipe streaming LLM tokens directly into the WebSocket. The server buffers text and generates audio at natural sentence/clause boundaries (50+ characters):
+
+**OpenAI-compatible**
+
+```javascript
+const player = new AudioPlayer(24000);
+
+// 1. Connect to murmr WebSocket
+const ws = new WebSocket('wss://api.murmr.dev/v1/realtime');
+ws.onopen = () => {
+  ws.send(JSON.stringify({
+    type: 'config',
+    api_key: MURMR_API_KEY,
+    voice_description: 'A helpful, clear assistant voice',
+  }));
+};
+
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  if (msg.type === 'audio') player.playChunk(msg.chunk);
+  if (msg.type === 'done') console.log('Audio complete');
+};
+
+// 2. Stream from OpenAI-compatible API
+async function speak(prompt) {
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: prompt }],
+      stream: true,
+    }),
+  });
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
+      const delta = JSON.parse(line.slice(6)).choices?.[0]?.delta?.content;
+      if (delta) {
+        // Send each token to murmr — server handles buffering
+        ws.send(JSON.stringify({ type: 'text', text: delta }));
+      }
+    }
+  }
+
+  // Flush remaining buffered text
+  ws.send(JSON.stringify({ type: 'flush' }));
+}
+
+speak('Tell me a short story about a curious robot.');
 ```
 
-### Initialize the Client
+**Generic Streaming**
+
+```javascript
+// Works with any streaming text source
+async function pipeToTTS(textStream, ws) {
+  for await (const token of textStream) {
+    ws.send(JSON.stringify({ type: 'text', text: token }));
+  }
+  ws.send(JSON.stringify({ type: 'flush' }));
+}
+
+// Example: pipe a ReadableStream
+const response = await fetch('/api/chat', {
+  method: 'POST',
+  body: JSON.stringify({ prompt: 'Hello' }),
+});
+
+const textStream = response.body
+  .pipeThrough(new TextDecoderStream());
+
+const reader = textStream.getReader();
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  ws.send(JSON.stringify({ type: 'text', text: value }));
+}
+ws.send(JSON.stringify({ type: 'flush' }));
+```
+
+> **Text buffering:** The server accumulates tokens until a natural break (sentence end with.!? or clause with,;: at 50+ chars) or 200 chars. You don't need to batch tokens client-side — just send each one as it arrives.
+
+## React Hook
+
+```tsx
+import { useState, useRef, useCallback } from 'react';
+
+function useRealtimeTTS(apiKey: string) {
+  const [isConnected, setIsConnected] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [latency, setLatency] = useState<number | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const playerRef = useRef<AudioPlayer | null>(null);
+
+  const connect = useCallback((voiceDescription: string) => {
+    const ws = new WebSocket('wss://api.murmr.dev/v1/realtime');
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({
+        type: 'config',
+        api_key: apiKey,
+        voice_description: voiceDescription,
+      }));
+    };
+
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+
+      if (msg.type === 'config_ack') {
+        setIsConnected(true);
+        playerRef.current = new AudioPlayer(24000);
+      }
+
+      if (msg.type === 'audio') {
+        setIsPlaying(true);
+        playerRef.current?.playChunk(msg.chunk);
+      }
+
+      if (msg.type === 'done') {
+        setLatency(msg.first_chunk_latency_ms);
+        setIsPlaying(false);
+      }
+
+      if (msg.type === 'error') {
+        console.error('[TTS]', msg.message);
+      }
+    };
+
+    ws.onclose = () => {
+      setIsConnected(false);
+      setIsPlaying(false);
+    };
+  }, [apiKey]);
+
+  const speak = useCallback((text: string) => {
+    wsRef.current?.send(JSON.stringify({ type: 'text', text }));
+    wsRef.current?.send(JSON.stringify({ type: 'flush' }));
+  }, []);
+
+  const disconnect = useCallback(() => {
+    wsRef.current?.close();
+    wsRef.current = null;
+  }, []);
+
+  return { connect, speak, disconnect, isConnected, isPlaying, latency };
+}
+```
+
+## Error Handling & Reconnection
+
+```javascript
+function createReconnectingWS(config) {
+  let ws = null;
+  let retries = 0;
+  const maxRetries = 5;
+  const player = new AudioPlayer(24000);
+
+  function connect() {
+    ws = new WebSocket('wss://api.murmr.dev/v1/realtime');
+
+    ws.onopen = () => {
+      retries = 0;  // Reset on successful connect
+      ws.send(JSON.stringify({
+        type: 'config',
+        api_key: config.apiKey,
+        voice_description: config.voiceDescription,
+      }));
+    };
+
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+
+      if (msg.type === 'audio') player.playChunk(msg.chunk);
+
+      if (msg.type === 'error') {
+        console.error('[TTS Error]', msg.message, 'code:', msg.code);
+        // Non-fatal: connection stays open, can send more text
+      }
+    };
+
+    ws.onclose = (event) => {
+      switch (event.code) {
+        case 1000:
+        case 1001:
+          // Normal close or server shutdown — reconnect
+          break;
+        case 4001:
+          console.error('Auth timeout — send config within 10s');
+          return;  // Don't retry
+        case 4002:
+          console.error('Auth failed — check API key and plan');
+          return;  // Don't retry
+        case 4003:
+          console.error('Invalid message format');
+          return;  // Don't retry
+        case 4004:
+          console.error('Rate limited');
+          break;  // Retry with backoff
+        case 4005:
+          console.error('Server error');
+          break;  // Retry with backoff
+      }
+
+      // Exponential backoff
+      if (retries < maxRetries) {
+        const delay = Math.min(1000 * Math.pow(2, retries), 30000);
+        retries++;
+        console.log(`Reconnecting in ${delay}ms (attempt ${retries})`);
+        setTimeout(connect, delay);
+      }
+    };
+  }
+
+  connect();
+  return {
+    send: (text) => {
+      ws?.send(JSON.stringify({ type: 'text', text }));
+    },
+    flush: () => {
+      ws?.send(JSON.stringify({ type: 'flush' }));
+    },
+    close: () => {
+      retries = maxRetries;  // Prevent reconnection
+      ws?.close();
+    },
+  };
+}
+```
+
+## Proxy Pattern (Production)
+
+Never expose your API key in client-side code. Proxy through your backend and inject the key server-side:
 
 ```typescript
-import { MurmrClient } from '@murmr/sdk';
+// Backend WebSocket proxy (Node.js)
+import { WebSocket, WebSocketServer } from 'ws';
 
-const client = new MurmrClient({
-  apiKey: process.env.MURMR_API_KEY!,
+const wss = new WebSocketServer({ port: 8080 });
+
+wss.on('connection', (clientWs, req) => {
+  // Authenticate with your own auth system
+  const user = authenticateUser(req);
+  if (!user) {
+    clientWs.close(4002, 'Unauthorized');
+    return;
+  }
+
+  const murmrWs = new WebSocket('wss://api.murmr.dev/v1/realtime');
+
+  murmrWs.on('open', () => {
+    clientWs.on('message', (data, isBinary) => {
+      if (isBinary) {
+        murmrWs.send(data);
+        return;
+      }
+
+      const msg = JSON.parse(data.toString());
+      if (msg.type === 'config') {
+        // Inject your API key — client never sees it
+        msg.api_key = process.env.MURMR_API_KEY;
+      }
+      murmrWs.send(JSON.stringify(msg));
+    });
+  });
+
+  // Forward all responses (binary + text)
+  murmrWs.on('message', (data, isBinary) => {
+    clientWs.send(data, { binary: isBinary });
+  });
+
+  murmrWs.on('close', (code, reason) => {
+    clientWs.close(code, reason.toString());
+  });
+
+  clientWs.on('close', () => murmrWs.close());
 });
 ```
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `apiKey` | `string` | (required) | Your murmr API key. Sent as a Bearer token. |
-| `baseUrl` | `string` | `https://api.murmr.dev` | Override the API base URL. |
-| `timeout` | `number` | `300000` | Request timeout in milliseconds (5 min default). |
+> API keys starting with `murmr_sk_live_` must never appear in client-side code. Use the proxy pattern for production apps.
 
-### Verify It Works
+## See Also
 
-Generate a short audio clip to confirm the SDK is configured correctly:
-
-```typescript
-import { MurmrClient } from '@murmr/sdk';
-import { writeFileSync } from 'node:fs';
-
-const client = new MurmrClient({
-  apiKey: process.env.MURMR_API_KEY!,
-});
-
-const wav = await client.voices.design({
-  input: 'Hello from murmr!',
-  voice_description: 'A warm, friendly narrator',
-  language: 'English',
-});
-
-writeFileSync('hello.wav', wav);
-console.log(`Generated ${wav.length} bytes`);
-```
-
-### Project Structure
-
-The client exposes three resource namespaces:
-
-- **`client.speech`** -- Generate audio from text (batch, streaming, long-form)
-- **`client.voices`** -- Design voices, save/list/delete, extract embeddings
-- **`client.jobs`** -- Track async batch jobs
-
-See the full [Node.js SDK Reference](./sdk-reference-node.md) for all methods and parameters.
-
-## Python SDK (murmr)
-
-Async-first with sync support. Built on `httpx` and `pydantic` v2.
-
-### Requirements
-
-- **Python 3.9+**
-- Dependencies (installed automatically): `httpx`, `pydantic` v2
-
-### Install
-
-```bash
-pip install murmr
-```
-
-### Set Your API Key
-
-```bash
-export MURMR_API_KEY="murmr_sk_live_your_key_here"
-```
-
-### Initialize the Client
-
-Two client classes are available. Both support context managers for automatic cleanup.
-
-**Sync client:**
-
-```python
-import os
-from murmr import MurmrClient
-
-client = MurmrClient(api_key=os.environ["MURMR_API_KEY"])
-
-# Or as a context manager (recommended)
-with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-    wav = client.voices.design(
-        input="Hello!",
-        voice_description="A warm, friendly voice",
-    )
-```
-
-**Async client:**
-
-```python
-import os
-from murmr import AsyncMurmrClient
-
-async with AsyncMurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-    wav = await client.voices.design(
-        input="Hello!",
-        voice_description="A warm, friendly voice",
-    )
-```
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `api_key` | `str` | (required) | Your murmr API key. Sent as a Bearer token. |
-| `base_url` | `str` | `https://api.murmr.dev` | Override the API base URL. |
-| `timeout` | `float` | `300.0` | Request timeout in seconds (5 min default). |
-
-### Verify It Works
-
-Generate a test audio file to confirm the Python SDK is working:
-
-```python
-import os
-from murmr import MurmrClient
-
-with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
-    wav = client.voices.design(
-        input="murmr is working.",
-        voice_description="A clear, professional voice",
-        language="English",
-    )
-
-    with open("test.wav", "wb") as f:
-        f.write(wav)
-
-    print(f"Success! Wrote {len(wav)} bytes to test.wav")
-```
-
-### Project Structure
-
-Both sync and async clients expose three resource namespaces:
-
-| Namespace | Description |
-|-----------|-------------|
-| `client.speech` | Generate audio from text with saved voices |
-| `client.voices` | Design voices with natural language, manage saved voices |
-| `client.jobs` | Track async batch jobs |
-
-See the full [Python SDK Reference](./sdk-reference-python.md) for all methods and parameters.
-
-## OpenAI Compatibility
-
-murmr is a drop-in replacement for OpenAI's TTS API. Change the base URL and API key to migrate. The `model` parameter is required by the OpenAI SDK but ignored by murmr:
-
-**Node.js (OpenAI SDK):**
-
-```typescript
-import OpenAI from 'openai';
-
-const client = new OpenAI({
-  apiKey: process.env.MURMR_API_KEY,
-  baseURL: 'https://api.murmr.dev',
-});
-
-const response = await client.audio.speech.create({
-  model: 'murmr-tts',         // ignored, but required by OpenAI SDK
-  voice: 'voice_abc123',       // your saved voice ID
-  input: 'Hello from murmr!',
-});
-```
-
-**Python (OpenAI SDK):**
-
-```python
-from openai import OpenAI
-
-client = OpenAI(
-    api_key=os.environ["MURMR_API_KEY"],
-    base_url="https://api.murmr.dev",
-)
-
-response = client.audio.speech.create(
-    model="murmr-tts",
-    voice="voice_abc123",
-    input="Hello from murmr!",
-)
-response.stream_to_file("output.wav")
-```
-
-See [OpenAI Migration](./openai-migration.md) for a full migration guide.
-
-## Next Steps
-
-- [Streaming](./streaming.md) -- Real-time audio streaming via SSE
-- [Voice Design](./voicedesign.md) -- Create voices with natural language descriptions
-- [Long-Form Generation](./long-form.md) -- Generate audio for text of any length
-- [Errors](./errors.md) -- Error handling and retry strategies
+- [WebSocket Protocol](./websocket-protocol.md) — Full message type reference, text buffering rules, close codes
+- [SSE Streaming](./streaming.md) — Simpler alternative for one-shot generation
+- [Voice Management](./voices.md) — Get voice_clone_prompt for saved voice WebSocket
