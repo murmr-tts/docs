@@ -22,15 +22,15 @@ murmr is a text-to-speech API that creates voices from natural language descript
 ### curl
 
 ```bash
-curl -X POST "https://api.murmr.dev/v1/voices/design" \
+curl -N -X POST "https://api.murmr.dev/v1/voices/design/stream" \
   -H "Authorization: Bearer $MURMR_API_KEY" \
   -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
   -d '{
     "text": "Welcome to our app. Let me show you around.",
     "voice_description": "A warm, friendly female voice, calm and clear",
     "language": "English"
-  }' \
-  --output welcome.wav
+  }'
 ```
 
 ### TypeScript
