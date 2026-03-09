@@ -23,6 +23,8 @@ User speaks
 
 ## Integration Example
 
+End-to-end voice agent that streams GPT-4o tokens into murmr's WebSocket for real-time audio output. The flow is: connect to murmr, authenticate, start the LLM stream, forward each token, flush at the end, and play audio as it arrives:
+
 **TypeScript**
 ```typescript
 import OpenAI from 'openai';
@@ -81,6 +83,8 @@ async function streamLLMResponse(ws: WebSocket) {
   ws.send(JSON.stringify({ type: 'flush' }));
 }
 ```
+
+Same voice agent in Python using `websockets` and the OpenAI async client. Tokens are forwarded as they arrive and audio chunks are collected:
 
 **Python**
 ```python
@@ -161,7 +165,7 @@ You can send tokens one at a time -- murmr accumulates them and generates speech
 
 ## Handling Interruptions
 
-In a conversational agent, the user may interrupt while audio is still playing. Each WebSocket connection handles one conversation turn. When interrupted, close and reconnect:
+In a conversational agent, the user may interrupt while audio is still playing. Each WebSocket connection handles one conversation turn. When interrupted, close the current connection (which cancels in-progress generation server-side) and open a new one for the next turn:
 
 **TypeScript**
 ```typescript
@@ -177,6 +181,8 @@ ws.close();
 const newWs = new WebSocket('wss://api.murmr.dev/v1/realtime');
 // ... configure and start new LLM stream
 ```
+
+Each conversation turn uses a fresh WebSocket connection. Closing the connection cancels any in-progress generation on the server:
 
 **Python**
 ```python

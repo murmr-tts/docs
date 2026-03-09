@@ -33,6 +33,8 @@ Saving a voice requires reference audio (a WAV buffer from a Voice Design call) 
 | `ref_text` | string | Yes | -- | Transcript of the reference audio. Improves embedding quality. |
 | `language` | string | No | `English` | Language name |
 
+Save a voice using curl by base64-encoding the reference WAV file and sending it with the transcript. The API extracts voice embeddings server-side:
+
 **curl**
 ```bash
 # First, generate audio with VoiceDesign and save the WAV file
@@ -50,6 +52,8 @@ curl -X POST "https://api.murmr.dev/v1/voices" \
     \"language\": \"English\"
   }"
 ```
+
+Two-step workflow with the Node.js SDK: generate reference audio with Voice Design, then save it. The `ref_text` must match the spoken audio for accurate embedding extraction:
 
 **TypeScript**
 ```typescript
@@ -78,6 +82,8 @@ const saved = await client.voices.save({
 console.log(`ID: ${saved.id}`);
 console.log(`Embedding size: ${saved.prompt_size_bytes} bytes`);
 ```
+
+Same workflow in Python. The SDK accepts raw `bytes` for the `audio` parameter and handles base64 encoding automatically:
 
 **Python (sync)**
 ```python
@@ -136,6 +142,8 @@ asyncio.run(main())
 
 ### Save Response
 
+A successful save returns the new voice ID, embedding size, and a confirmation. Use the `id` field in subsequent TTS requests:
+
 ```json
 {
   "id": "voice_a1b2c3d4e5f6",
@@ -155,11 +163,15 @@ asyncio.run(main())
 
 Returns all saved voices for your account along with plan limits.
 
+List all saved voices with curl. Returns an array of voice metadata plus your plan's saved voice limits:
+
 **curl**
 ```bash
 curl "https://api.murmr.dev/v1/voices" \
   -H "Authorization: Bearer $MURMR_API_KEY"
 ```
+
+Check how many voice slots you've used and iterate over saved voices:
 
 **TypeScript**
 ```typescript
@@ -206,6 +218,8 @@ for voice in response.voices:
 `DELETE /v1/voices/:id`
 
 Permanently deletes a saved voice.
+
+Delete a voice by ID. This is permanent and frees one slot toward your plan's limit:
 
 **curl**
 ```bash
@@ -255,6 +269,8 @@ Extract portable voice embeddings from audio without saving the voice. The retur
 | `prompt_data` | string | Base64-encoded voice embedding data. Pass this as `voice_clone_prompt` in TTS requests. |
 | `prompt_size_bytes` | number | Size of the embedding data in bytes (typically 50-200KB). |
 
+Extract embeddings from reference audio via curl. Send base64-encoded WAV audio and the transcript:
+
 **curl**
 ```bash
 curl -X POST "https://api.murmr.dev/v1/voices/extract-embeddings" \
@@ -262,6 +278,8 @@ curl -X POST "https://api.murmr.dev/v1/voices/extract-embeddings" \
   -H "Content-Type: application/json" \
   -d '{"audio": "<base64-wav>", "ref_text": "Transcript of the audio."}'
 ```
+
+Extract embeddings with the Node.js SDK and use them inline for TTS. The `voice` parameter is required but ignored when `voice_clone_prompt` is provided:
 
 **TypeScript**
 ```typescript
@@ -288,6 +306,8 @@ const stream = await client.speech.stream({
   voice_clone_prompt: prompt_data,
 });
 ```
+
+Extract embeddings in Python, then use them directly in a TTS request without saving the voice. This avoids counting against your saved voice limit:
 
 **Python**
 ```python

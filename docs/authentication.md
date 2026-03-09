@@ -17,6 +17,8 @@ Test keys have the same rate limits as your plan but do not count toward your mo
 
 Every HTTP API request requires the `Authorization` header with a Bearer token.
 
+Pass your API key as a Bearer token in the `Authorization` header on every request:
+
 **curl**
 ```bash
 curl -X POST https://api.murmr.dev/v1/voices/design \
@@ -24,6 +26,8 @@ curl -X POST https://api.murmr.dev/v1/voices/design \
   -H "Content-Type: application/json" \
   -d '{"text": "Hello world", "voice_description": "A calm voice"}'
 ```
+
+The SDKs handle the `Authorization` header automatically. Just pass your key at initialization:
 
 **TypeScript**
 ```typescript
@@ -46,7 +50,7 @@ client = MurmrClient(api_key=os.environ["MURMR_API_KEY"])
 
 ### WebSocket Connections
 
-For the realtime WebSocket endpoint, connect without credentials and then send your API key in the `config` message:
+For the realtime WebSocket endpoint, connect without credentials and send your API key in the first `config` message within 10 seconds. The key is sent over the encrypted WebSocket connection, not as a URL parameter:
 
 ```
 wss://api.murmr.dev/v1/realtime
@@ -72,6 +76,8 @@ Never commit API keys to source control. Use environment variables:
 MURMR_API_KEY=murmr_sk_live_your_key_here
 ```
 
+Always load API keys from environment variables. Hardcoding keys risks leaking them in version control:
+
 **TypeScript**
 ```typescript
 // Correct: environment variable
@@ -84,6 +90,8 @@ const client = new MurmrClient({
   apiKey: 'murmr_sk_live_abc123...',  // DO NOT DO THIS
 });
 ```
+
+Validate that the environment variable is set before creating the client to get a clear error message at startup:
 
 **Python**
 ```python
@@ -107,6 +115,8 @@ Every API response includes headers that report your current usage:
 | `X-RateLimit-Remaining` | Characters remaining this period | `847250` |
 | `X-RateLimit-Reset` | When the quota resets (ISO 8601) | `2026-04-01T00:00:00.000Z` |
 
+Read the rate limit headers from any API response to monitor your monthly character usage:
+
 **TypeScript**
 ```typescript
 import { MurmrClient, isSyncResponse } from '@murmr/sdk';
@@ -127,6 +137,8 @@ if (isSyncResponse(result)) {
   console.log(`${remaining}/${limit} characters remaining (resets ${reset})`);
 }
 ```
+
+Check usage via raw HTTP response headers. The `X-RateLimit-Reset` header shows when your quota resets (ISO 8601):
 
 **Python**
 ```python
@@ -189,6 +201,8 @@ Both SDKs accept these options:
 | API Key | `apiKey` | `api_key` | (required) | Your murmr API key |
 | Base URL | `baseUrl` | `base_url` | `https://api.murmr.dev` | API base URL |
 | Timeout | `timeout` | `timeout` | `300000ms` / `300.0s` | Request timeout |
+
+Override the default 5-minute timeout for faster failure detection. Set a shorter timeout for interactive applications:
 
 **TypeScript**
 ```typescript

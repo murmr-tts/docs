@@ -27,6 +27,8 @@ First message after connecting. Authenticates and configures the voice.
 | `voice_clone_prompt` | `string` | No | -- | Base64-encoded voice prompt data from saved voice. Alternative to `voice_description`. |
 | `language` | `string` | No | `"Auto"` | Full language name: English, Spanish, Portuguese, German, French, Italian, Chinese, Japanese, Korean, Russian, or "Auto" |
 
+Use `voice_description` for Voice Design mode (new voice from a description) or `voice_clone_prompt` for saved voice mode (consistent voice from stored embeddings):
+
 ```json
 // VoiceDesign mode
 {
@@ -196,6 +198,8 @@ Binary mode eliminates base64 encoding overhead for lower latency. Audio arrives
 
 > **Detecting frame type:** In binary mode, check the WebSocket frame type to distinguish audio from control messages. Binary frames contain PCM audio. Text frames contain JSON (done, error, pong).
 
+Distinguish binary audio frames from JSON control messages by checking the frame type. Binary frames contain raw PCM; text frames contain JSON (done, error, pong):
+
 **TypeScript**
 ```typescript
 ws.on('message', (data, isBinary) => {
@@ -243,6 +247,8 @@ async for message in ws:
 Character usage on WebSocket counts against your plan's monthly character quota, same as HTTP endpoints.
 
 ## Testing with wscat
+
+Test the WebSocket protocol interactively using `wscat`. Paste JSON messages line by line and observe the SSE-style audio responses:
 
 ```bash
 # Install

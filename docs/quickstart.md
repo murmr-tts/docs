@@ -25,7 +25,7 @@ No SDK? You can use the REST API directly with any HTTP client.
 
 ## Set Your API Key
 
-API keys follow the format `murmr_sk_live_xxx`. Set it as an environment variable:
+API keys follow the format `murmr_sk_live_xxx`. Set it as an environment variable so the SDK can find it automatically:
 
 ```bash
 export MURMR_API_KEY="murmr_sk_live_your_key_here"
@@ -34,6 +34,8 @@ export MURMR_API_KEY="murmr_sk_live_your_key_here"
 > Never hardcode API keys. Always use environment variables. See the [Authentication guide](./authentication.md) for best practices.
 
 ## Initialize the Client
+
+Create a client instance with your API key. Reuse this client across your application:
 
 **TypeScript**
 ```typescript

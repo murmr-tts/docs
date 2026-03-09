@@ -35,6 +35,8 @@ After connecting, send a `config` message with your API key within 10 seconds. T
 
 ## Quick Example
 
+Connect to the WebSocket, authenticate with a `config` message, send text, and receive PCM audio chunks. The `done` message includes latency metrics:
+
 **TypeScript**
 ```typescript
 import WebSocket from 'ws';
@@ -74,6 +76,8 @@ ws.on('message', (data, isBinary) => {
   }
 });
 ```
+
+Same flow in Python using the `websockets` library. Audio arrives as either binary frames (in binary mode) or base64-encoded JSON:
 
 **Python**
 ```python

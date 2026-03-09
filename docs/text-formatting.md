@@ -111,6 +111,8 @@ Too many blank lines create awkwardly long pauses. Use at most two consecutive n
 
 ## Preprocessing Function
 
+Strip markdown formatting, collapse excessive newlines, and unwrap hard-wrapped lines before sending text to the TTS API. This function handles the most common sources of garbled output:
+
 **TypeScript**
 ```typescript
 function preprocessText(raw: string): string {
@@ -135,6 +137,8 @@ function preprocessText(raw: string): string {
     .trim();
 }
 ```
+
+Same preprocessing in Python using regex. Removes markdown syntax, HTML tags, and normalizes whitespace:
 
 **Python**
 ```python
@@ -175,6 +179,8 @@ For text longer than 4,096 characters, use the SDK's long-form generation which 
 5. CJK character boundaries
 6. Hard character limit (last resort)
 
+Generate audio from text of any length. The SDK splits, generates, and concatenates automatically:
+
 **TypeScript**
 ```typescript
 const result = await client.speech.createLongForm({
@@ -182,6 +188,8 @@ const result = await client.speech.createLongForm({
   voice: 'voice_abc123',
 });
 ```
+
+Same in Python, with optional control over chunk size and silence duration between chunks:
 
 **Python**
 ```python
@@ -197,7 +205,7 @@ result = client.speech.create_long_form(
 
 ### Chinese / Japanese / Korean
 
-CJK text does not use spaces between words. The model handles this natively. Use punctuation for pacing:
+CJK text does not use spaces between words. The model handles this natively. Use standard CJK punctuation for pacing control:
 
 ```python
 text = "今天天气很好。我们去公园散步吧。\n\n公园里有很多花，非常漂亮。"
@@ -205,7 +213,7 @@ text = "今天天气很好。我们去公园散步吧。\n\n公园里有很多�
 
 ### German
 
-German compound words are pronounced correctly without splitting:
+German compound words (like Geschwindigkeitsbegrenzung) are pronounced correctly without manual splitting:
 
 ```python
 text = "Die Geschwindigkeitsbegrenzung auf der Autobahn betragt manchmal zweihundert Kilometer pro Stunde."
@@ -213,7 +221,7 @@ text = "Die Geschwindigkeitsbegrenzung auf der Autobahn betragt manchmal zweihun
 
 ### Dialogue
 
-Use newlines to separate speaker turns:
+Use newlines to separate speaker turns. Double newlines create longer pauses between speakers:
 
 ```python
 text = """"Good morning," said the receptionist. "How can I help you?"

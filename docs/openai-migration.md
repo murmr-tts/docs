@@ -23,6 +23,8 @@ murmr is designed as a drop-in replacement for OpenAI's TTS API. Migrate with mi
 
 ### Before (OpenAI)
 
+Standard OpenAI TTS call using one of the 6 fixed voices:
+
 **curl**
 ```bash
 curl https://api.openai.com/v1/audio/speech \
@@ -65,6 +67,8 @@ response.stream_to_file("output.mp3")
 ```
 
 ### After (murmr with VoiceDesign)
+
+Replace the fixed voice name with a natural-language description. The endpoint changes to `/v1/voices/design`:
 
 **curl**
 ```bash
@@ -111,7 +115,7 @@ with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
 
 ### After (murmr with Saved Voice)
 
-For a workflow closer to OpenAI's fixed voice model, save a voice once and reuse it by ID:
+For a workflow closer to OpenAI's fixed voice model, save a voice once and reuse it by ID. The `/v1/audio/speech` endpoint accepts saved voice IDs and supports all audio formats:
 
 **curl**
 ```bash
@@ -176,6 +180,8 @@ OpenAI provides 6 fixed voices. murmr lets you create unlimited custom voices.
 3. Save the voice for a persistent ID
 4. Map your old OpenAI voice names to the new murmr IDs
 
+Create a replacement voice for each OpenAI voice you use. This is a one-time setup -- save the voice ID and use it in production:
+
 **TypeScript**
 ```typescript
 // One-time setup: create and save your voices
@@ -193,6 +199,8 @@ const saved = await client.voices.save({
 
 console.log(`Nova replacement: ${saved.id}`);
 ```
+
+Create a mapping from OpenAI voice names to murmr voice IDs for a drop-in replacement function:
 
 **Python**
 ```python
@@ -245,7 +253,7 @@ After migrating, take advantage of murmr-specific capabilities:
 
 ## OpenAI SDK Compatibility Note
 
-If you are using the OpenAI Node.js or Python SDK pointed at murmr's base URL, be aware that the batch endpoint returns HTTP 202 (async) instead of 200. The OpenAI SDK expects 200 and may not handle 202 responses correctly. Use the `@murmr/sdk` or `murmr` packages for full compatibility.
+If you are using the OpenAI Node.js or Python SDK pointed at murmr's base URL, be aware that the batch endpoint returns HTTP 202 (async) instead of 200. The OpenAI SDK expects 200 and may not handle 202 responses correctly. Use the native murmr SDK instead:
 
 ```typescript
 // May not work correctly for all request types:

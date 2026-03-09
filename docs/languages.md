@@ -27,6 +27,8 @@ When `language` is omitted or set to `Auto`, the API attempts to detect the lang
 
 ## Setting the Language
 
+Set the `language` parameter to match the language of your input text. This controls pronunciation, intonation, and prosodic patterns:
+
 **curl**
 ```bash
 curl -X POST "https://api.murmr.dev/v1/voices/design" \
@@ -78,6 +80,8 @@ with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
 
 ### Chinese
 
+Generate Mandarin Chinese speech from simplified or traditional Chinese characters. The model handles tones natively:
+
 ```python
 wav = client.voices.design(
     input="你好，欢迎来到我们的平台。今天的天气很好。",
@@ -92,6 +96,8 @@ wav = client.voices.design(
 
 ### Japanese
 
+Generate Japanese speech from kanji, hiragana, and katakana. No furigana needed -- the model reads kanji in context:
+
 ```python
 wav = client.voices.design(
     input="こんにちは。本日のニュースをお伝えします。",
@@ -104,6 +110,8 @@ wav = client.voices.design(
 - Furigana is not needed; the model reads kanji correctly in context
 
 ### Korean
+
+Generate Korean speech from standard hangul input. Use hangul equivalents instead of hanja (Chinese characters) for reliable pronunciation:
 
 ```python
 wav = client.voices.design(
@@ -118,7 +126,7 @@ wav = client.voices.design(
 
 ### European Languages
 
-English, French, German, Italian, Portuguese, Russian, and Spanish all work with standard Unicode text. For best results, use proper diacritics and native punctuation conventions.
+English, French, German, Italian, Portuguese, Russian, and Spanish all work with standard Unicode text. For best results, use proper diacritics and native punctuation conventions:
 
 ```python
 # Portuguese with proper diacritics
@@ -146,6 +154,8 @@ wav = client.voices.design(
 ## Cross-Lingual Synthesis
 
 murmr supports cross-lingual synthesis: use a voice designed with a description in one language to generate speech in another. The voice characteristics (tone, pace, timbre) transfer across languages.
+
+Save a voice once and use the same voice ID across different languages by changing the `language` parameter:
 
 **TypeScript**
 ```typescript
@@ -221,7 +231,7 @@ with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
 
 ## Mixed-Language Text
 
-For text containing multiple languages (e.g., English with occasional French words), set the `language` to the dominant language. The model handles common loanwords and proper nouns naturally.
+For text containing multiple languages (e.g., English with occasional French words), set `language` to the dominant language. The model handles common loanwords and proper nouns naturally:
 
 ```python
 wav = client.voices.design(

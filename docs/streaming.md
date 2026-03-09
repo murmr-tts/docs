@@ -72,6 +72,8 @@ data: {"error":"Rate limit exceeded","done":true}
 
 ## curl
 
+Stream audio directly from the command line. The response is a `text/event-stream` with JSON-encoded SSE events containing base64 PCM audio:
+
 **curl**
 ```bash
 # VoiceDesign streaming
@@ -95,6 +97,8 @@ curl -X POST "https://api.murmr.dev/v1/audio/speech/stream" \
 ```
 
 ## TypeScript
+
+Collect all streamed PCM chunks and combine them into a WAV file. The `first_chunk_latency_ms` field on the first chunk tells you the time-to-first-chunk (TTFC):
 
 **TypeScript**
 ```typescript
@@ -132,6 +136,8 @@ writeFileSync('output.wav', wav);
 ```
 
 ## Python
+
+Stream audio and collect PCM chunks in Python. The stream context manager handles connection lifecycle automatically:
 
 **Python (sync)**
 ```python
@@ -182,7 +188,7 @@ asyncio.run(main())
 
 ## Saving Streamed Audio as WAV
 
-The stream produces raw PCM. To save as WAV, add a header.
+The stream produces raw PCM without a header. To save as a playable WAV file, wrap the PCM data with a WAV header using Python's `wave` module. Set nchannels=1, sampwidth=2, framerate=24000 to match murmr's output:
 
 **Python**
 ```python
@@ -213,7 +219,7 @@ with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
 
 ## Browser: Web Audio API Playback
 
-Stream audio directly to the browser for real-time playback using the Web Audio API.
+Stream audio directly to the browser for real-time playback using the Web Audio API. This example parses SSE events from a `fetch` response, decodes base64 PCM to Float32, and schedules gapless playback:
 
 ```javascript
 async function playStream(text, voiceDescription) {
@@ -293,7 +299,7 @@ playStream('Hello, world!', 'A warm, friendly voice');
 
 ## Error Handling in Streams
 
-Errors can occur before the stream starts (HTTP error status) or mid-stream (error event in SSE). Always check `response.ok` before reading the stream.
+Errors can occur before the stream starts (HTTP error status, thrown as `MurmrError`) or mid-stream (error field in an SSE event). Always check both: catch `MurmrError` for pre-stream failures and check `chunk.error` for mid-stream failures:
 
 **TypeScript**
 ```typescript

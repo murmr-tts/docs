@@ -4,6 +4,8 @@ Connect to the real-time WebSocket endpoint from the browser. No dependencies --
 
 ## Quick Start
 
+Connect to the real-time WebSocket endpoint and generate speech from the browser. Send a `config` message to authenticate, then send text to synthesize. Audio arrives as base64-encoded PCM chunks (24kHz, 16-bit, mono):
+
 ```javascript
 const ws = new WebSocket('wss://api.murmr.dev/v1/realtime');
 
@@ -35,7 +37,7 @@ ws.onmessage = (event) => {
 };
 ```
 
-For saved voices, use `voice_clone_prompt` instead of `voice_description`:
+To use a saved voice instead of a description, pass `voice_clone_prompt` with the base64 embedding data retrieved from your database or the save endpoint:
 
 ```javascript
 ws.onopen = () => {
@@ -50,7 +52,7 @@ ws.onopen = () => {
 
 ## Web Audio Playback
 
-Decode base64 PCM chunks and schedule seamless playback with the Web Audio API:
+Decode base64 PCM chunks and schedule seamless gapless playback with the Web Audio API. Each chunk is converted from Int16 to Float32 and scheduled to play immediately after the previous chunk ends:
 
 ```javascript
 class AudioPlayer {
@@ -112,7 +114,7 @@ class AudioPlayer {
 
 ## Binary Mode
 
-Binary mode sends raw PCM bytes instead of base64 JSON, saving ~50-100ms per chunk. Enable it after receiving `config_ack`:
+Binary mode sends raw PCM bytes instead of base64 JSON, saving ~50-100ms per chunk. Enable it by sending `{"type":"binary_mode"}` after receiving `config_ack`. Set `ws.binaryType = 'arraybuffer'` before connecting to receive binary frames as `ArrayBuffer` objects:
 
 ```javascript
 const player = new AudioPlayer(24000);
@@ -163,6 +165,8 @@ ws.onmessage = (event) => {
 Pipe streaming LLM tokens directly into the WebSocket. The server buffers text and generates audio at natural sentence/clause boundaries (50+ characters).
 
 ### OpenAI-Compatible
+
+Stream tokens from an OpenAI-compatible chat API and pipe each token into the murmr WebSocket. The server buffers text and generates audio at sentence boundaries automatically:
 
 ```javascript
 const player = new AudioPlayer(24000);
@@ -229,6 +233,8 @@ speak('Tell me a short story about a curious robot.');
 
 ### Generic Streaming
 
+Pipe any async text stream (LLM, translation service, etc.) into the WebSocket. Send each token as it arrives and flush when the stream ends:
+
 ```javascript
 // Works with any streaming text source
 async function pipeToTTS(textStream, ws) {
@@ -242,6 +248,8 @@ async function pipeToTTS(textStream, ws) {
 > **Text buffering:** The server accumulates tokens until a natural break (sentence end with `.!?` or clause with `,;:` at 50+ chars) or 200 chars. You don't need to batch tokens client-side -- just send each one as it arrives.
 
 ## React Hook
+
+A React hook that manages a WebSocket connection for real-time TTS. Exposes `connect`, `speak`, and `disconnect` methods along with connection state and latency metrics:
 
 ```tsx
 import { useState, useRef, useCallback } from 'react';
@@ -309,6 +317,8 @@ function useRealtimeTTS(apiKey: string) {
 ```
 
 ## Reconnection with Backoff
+
+Automatically reconnect with exponential backoff when the connection drops. Non-retryable close codes (auth failures, invalid messages) stop reconnection to avoid loops:
 
 ```javascript
 function createReconnectingWS(config) {
@@ -379,7 +389,7 @@ function createReconnectingWS(config) {
 
 ## Security: Proxy Pattern
 
-Never expose your API key in client-side code. Proxy WebSocket connections through your backend and inject the key server-side:
+Never expose your API key in client-side code. Proxy WebSocket connections through your backend and inject the API key server-side. This Node.js example authenticates the client with your own auth system, then forwards messages to murmr with the API key injected:
 
 ```typescript
 // Backend WebSocket proxy (Node.js)

@@ -87,6 +87,8 @@ You don't need all elements. "Wizard" already implies age and mystical qualities
 
 ## Using Descriptions with the SDKs
 
+Pass your crafted `voice_description` to the `voices.design()` method to generate audio. The description controls the voice's identity while the `input` text controls what is spoken:
+
 **TypeScript**
 ```typescript
 import { MurmrClient } from '@murmr/sdk';

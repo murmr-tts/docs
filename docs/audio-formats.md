@@ -66,6 +66,8 @@ Lossless compression. Typically 40-60% smaller than WAV with zero quality loss. 
 
 The `response_format` parameter is only available on the **batch** endpoints (`/v1/audio/speech` and `/v1/voices/design`). Streaming endpoints always return PCM.
 
+Request a specific format by setting `response_format` in your batch TTS request. The server encodes the audio server-side and returns it in the requested format:
+
 **curl**
 ```bash
 curl -X POST "https://api.murmr.dev/v1/audio/speech" \
@@ -78,6 +80,8 @@ curl -X POST "https://api.murmr.dev/v1/audio/speech" \
   }' \
   --output output.opus
 ```
+
+Generate batch audio in a specific format using the Node.js SDK. The response contains binary audio in the requested format:
 
 **TypeScript**
 ```typescript
@@ -99,6 +103,8 @@ if (isSyncResponse(result)) {
   writeFileSync('output.opus', buffer);
 }
 ```
+
+Generate audio in multiple formats using the Python SDK. Each `response_format` value produces a different encoding:
 
 **Python**
 ```python
@@ -134,7 +140,9 @@ with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
 
 ## PCM to WAV Conversion
 
-Streaming endpoints return raw PCM. To create a valid WAV file, add a header.
+Streaming endpoints return raw PCM without a header. To save streamed audio as a playable WAV file, collect all PCM chunks and prepend a 44-byte RIFF WAV header. The SDK provides a `createWavHeader()` utility for this.
+
+Collect streamed PCM chunks and write them as a WAV file using the SDK's `createWavHeader()` utility:
 
 **TypeScript**
 ```typescript
@@ -163,6 +171,8 @@ const header = createWavHeader(pcm.length);
 const wav = Buffer.concat([header, pcm]);
 writeFileSync('from-stream.wav', wav);
 ```
+
+Convert streamed PCM to WAV using Python's built-in `wave` module. Set the channel count, sample width, and frame rate to match murmr's native output (1 channel, 2 bytes, 24kHz):
 
 **Python**
 ```python

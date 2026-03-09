@@ -105,6 +105,8 @@ The SDK splits text intelligently to preserve natural speech flow:
 
 The default chunk size of 3,500 characters keeps chunks below the 4,096 API limit while leaving room for sentence-boundary splitting.
 
+Use the `splitIntoChunks` utility directly if you need manual control over how text is divided. Each chunk respects sentence boundaries and stays within the specified character limit:
+
 **TypeScript**
 ```typescript
 import { splitIntoChunks } from '@murmr/sdk';
@@ -175,7 +177,7 @@ with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
 
 ## Audio Format
 
-Long-form generation always produces a WAV file (24kHz, 16-bit, mono PCM). To convert to other formats:
+Long-form generation always produces a WAV file (24kHz, 16-bit, mono PCM). To convert to other formats, use a library like `pydub` to transcode the WAV output:
 
 **Python**
 ```python

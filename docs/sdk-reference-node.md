@@ -16,6 +16,8 @@ const client = new MurmrClient({
 });
 ```
 
+Create a single `MurmrClient` instance and reuse it for all requests. The client manages auth headers, timeouts, and connection pooling automatically.
+
 ### Constructor Options
 
 | Parameter | Type | Required | Default | Description |
@@ -503,7 +505,7 @@ Standalone exports for advanced use cases.
 
 ### splitIntoChunks()
 
-Split text at sentence boundaries. Supports Latin and CJK punctuation. Falls back to clause boundaries, then word boundaries.
+Split text at sentence boundaries for manual chunking workflows. Supports Latin and CJK punctuation. Falls back to clause boundaries, then word boundaries. Use this when you need to control chunk-level processing (e.g., per-chunk progress tracking or custom retry logic) instead of using `createLongForm()`.
 
 ```typescript
 import { splitIntoChunks } from '@murmr/sdk';
@@ -519,7 +521,7 @@ const chunks = splitIntoChunks(longText, 3500);
 
 ### concatenateAudio()
 
-Concatenate multiple audio buffers with optional silence gaps.
+Join multiple audio buffers into a single file with optional silence gaps between them. Useful when you generate chunks individually and need to combine them into one output. For WAV and PCM formats, silence gaps are inserted as zero-filled samples; for compressed formats, buffers are concatenated without silence.
 
 ```typescript
 import { concatenateAudio } from '@murmr/sdk';
@@ -537,6 +539,8 @@ const combined = concatenateAudio(audioBuffers, 'wav', 400);
 | `silenceMs` | `number` | No | `0` | Milliseconds of silence between chunks. |
 
 ### Type Guards
+
+Narrow the return type of `speech.create()`, which returns either a `Response` (sync, audio bytes) or `AsyncJobResponse` (async, job ID) depending on whether `webhook_url` was provided.
 
 ```typescript
 import { isSyncResponse, isAsyncResponse } from '@murmr/sdk';
@@ -570,7 +574,7 @@ if (isAsyncResponse(result)) {
 
 ## Type Exports
 
-All types are exported for use in your TypeScript code.
+All types are exported for use in your TypeScript code. Import these for type-safe request options, response handling, and custom wrappers around the SDK.
 
 ```typescript
 import type {

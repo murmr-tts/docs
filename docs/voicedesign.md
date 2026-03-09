@@ -28,6 +28,8 @@ Voice Design always streams via SSE. Both `/v1/voices/design` and `/v1/voices/de
 
 ## Streaming Examples
 
+Stream a Voice Design generation via SSE. Audio chunks arrive as base64 PCM. The curl output shows raw SSE events:
+
 **curl**
 ```bash
 curl -X POST "https://api.murmr.dev/v1/voices/design" \
@@ -39,6 +41,8 @@ curl -X POST "https://api.murmr.dev/v1/voices/design" \
     "language": "English"
   }'
 ```
+
+Stream a Voice Design and process chunks individually. The `first_chunk_latency_ms` on the first chunk reports time-to-first-chunk:
 
 **TypeScript**
 ```typescript
@@ -108,7 +112,7 @@ asyncio.run(main())
 
 ## SDK Convenience Methods (Complete WAV)
 
-The SDK's `design()` / `voices.design()` method streams internally, collects all chunks, and returns a complete WAV buffer.
+The SDK's `design()` / `voices.design()` method streams internally, collects all chunks, and returns a complete WAV buffer (24kHz, mono, 16-bit PCM). Use this when you want the full audio file without handling chunks manually:
 
 **TypeScript**
 ```typescript
@@ -189,7 +193,7 @@ Good voice descriptions are specific about tone, pace, gender, age, and accent.
 
 ## Saving a Designed Voice
 
-Each Voice Design call generates a unique voice. To reuse the same voice, save it:
+Each Voice Design call generates a unique voice. To reuse the same voice consistently across requests, save it with `voices.save()`. The saved voice ID can then be used with the `/v1/audio/speech` endpoints:
 
 **TypeScript**
 ```typescript

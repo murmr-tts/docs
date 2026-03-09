@@ -4,6 +4,8 @@ Complete reference for the `murmr` Python SDK. Covers all methods, parameters, a
 
 ## Client
 
+Import the sync client for scripts and server frameworks, or the async client for `asyncio`-based applications. Both have identical APIs; the async variant prefixes all methods with `await`.
+
 ```python
 from murmr import MurmrClient, AsyncMurmrClient
 ```
@@ -18,7 +20,7 @@ from murmr import MurmrClient, AsyncMurmrClient
 
 ### Context Managers
 
-Both clients support context managers for automatic cleanup (closes the underlying `httpx` client).
+Both clients support context managers for automatic cleanup (closes the underlying `httpx` client). Using a context manager is recommended to avoid resource leaks in long-running applications.
 
 ```python
 # Sync
@@ -62,6 +64,8 @@ Generate speech from text using a saved voice. Returns audio bytes synchronously
 
 #### Sync Example
 
+Generate audio from a saved voice and write it to a file. The default response (no `webhook_url`) returns a `SyncAudioResponse` with audio bytes:
+
 ```python
 result = client.speech.create(
     input="Hello, world!",
@@ -75,6 +79,8 @@ if isinstance(result, SyncAudioResponse):
 ```
 
 #### Async Example
+
+The async variant has the same interface. Use `await` on every method call:
 
 ```python
 result = await client.speech.create(
@@ -108,6 +114,8 @@ All parameters from `speech.create()` (except `webhook_url`) plus:
 
 #### Sync Example
 
+Submit a batch TTS job and block until it completes. Returns `SyncAudioResponse` if the server responds immediately, or `JobStatus` after polling:
+
 ```python
 result = client.speech.create_and_wait(
     input="Hello, world!",
@@ -125,6 +133,8 @@ elif result.audio_bytes:
 ```
 
 #### Async Example
+
+Same as sync, but non-blocking. Useful in web servers or event loops where you cannot block the main thread:
 
 ```python
 result = await client.speech.create_and_wait(
@@ -156,6 +166,8 @@ Stream audio using a saved voice via SSE. Returns a context manager that yields 
 
 #### Sync Example
 
+Stream audio from a saved voice for real-time playback. The context manager yields `AudioStreamChunk` objects containing PCM audio (24kHz, mono, 16-bit):
+
 ```python
 with client.speech.stream(
     input="Real-time audio streaming.",
@@ -168,6 +180,8 @@ with client.speech.stream(
 ```
 
 #### Async Example
+
+Async streaming for use in `asyncio` event loops. Each chunk is identical to the sync variant:
 
 ```python
 async with client.speech.stream(
@@ -285,6 +299,8 @@ Generate audio with a natural-language voice description. Returns WAV audio as `
 
 #### Sync Example
 
+Create a voice from a natural-language description and generate audio. Returns complete WAV bytes (24kHz, mono, 16-bit PCM):
+
 ```python
 wav = client.voices.design(
     input="Welcome to the show.",
@@ -297,6 +313,8 @@ with open("output.wav", "wb") as f:
 ```
 
 #### Async Example
+
+Async variant returns the same WAV `bytes`:
 
 ```python
 wav = await client.voices.design(
@@ -319,6 +337,8 @@ Same as `voices.design()`.
 
 #### Sync Example
 
+Stream audio with a voice description via SSE for lower-latency playback than the non-streaming `design()` method. Each chunk contains raw PCM audio:
+
 ```python
 with client.voices.design_stream(
     input="Streaming with a designed voice.",
@@ -331,6 +351,8 @@ with client.voices.design_stream(
 ```
 
 #### Async Example
+
+Async streaming variant for use in `asyncio` applications:
 
 ```python
 async with client.voices.design_stream(
@@ -349,6 +371,8 @@ Retrieve all saved voices for the authenticated user.
 
 #### Sync Example
 
+Retrieve all saved voices and check how many voice slots are used on your plan:
+
 ```python
 response = client.voices.list_voices()
 
@@ -358,6 +382,8 @@ for voice in response.voices:
 ```
 
 #### Async Example
+
+Async variant for listing voices:
 
 ```python
 response = await client.voices.list_voices()
@@ -396,6 +422,8 @@ Voice limits by plan: Free: 3, Starter: 10, Pro: 25, Realtime: 50, Scale: 100.
 
 #### Sync Example
 
+Two-step workflow: generate reference audio with Voice Design, then save it for reuse. The `ref_text` must match the audio content for accurate embedding extraction:
+
 ```python
 wav = client.voices.design(
     input="This is my reference audio for voice saving.",
@@ -414,6 +442,8 @@ print(f"Voice ID: {saved.id}")
 ```
 
 #### Async Example
+
+Same two-step workflow using the async client:
 
 ```python
 wav = await client.voices.design(
@@ -450,12 +480,16 @@ Permanently delete a saved voice by ID.
 
 #### Sync Example
 
+Permanently remove a saved voice by its ID. This frees one slot toward your plan's saved voice limit:
+
 ```python
 result = client.voices.delete("voice_abc123def456")
 print(f"Deleted: {result.success}")
 ```
 
 #### Async Example
+
+Async variant for deleting a voice:
 
 ```python
 result = await client.voices.delete("voice_abc123def456")
@@ -483,6 +517,8 @@ Extract portable voice embeddings from audio without saving the voice. Store the
 
 #### Sync Example
 
+Extract a portable voice embedding from WAV audio and use it inline in a TTS request. The embedding (~50-200KB base64 string) can be stored in your own database:
+
 ```python
 result = client.voices.extract_embeddings(
     audio=open("reference.wav", "rb").read(),
@@ -500,6 +536,8 @@ with client.speech.stream(
 ```
 
 #### Async Example
+
+Async variant for extracting and using portable embeddings:
 
 ```python
 result = await client.voices.extract_embeddings(
@@ -533,12 +571,16 @@ Get the status of an async batch job.
 
 #### Sync Example
 
+Check the current status of an async batch job by its ID. Returns a `JobStatus` with fields for status, audio data, and error info:
+
 ```python
 status = client.jobs.get("job_xyz")
 print(f"Status: {status.status}")
 ```
 
 #### Async Example
+
+Async variant for checking job status:
 
 ```python
 status = await client.jobs.get("job_xyz")
@@ -559,7 +601,7 @@ print(f"Status: {status.status}")
 | `content_type` | `str \| None` | Audio content type (e.g. `audio/wav`). |
 | `response_format` | `str \| None` | Audio format used. |
 
-The `JobStatus` model also provides an `audio_bytes` property that decodes `audio_base64` into raw `bytes`:
+The `JobStatus` model also provides an `audio_bytes` property that decodes `audio_base64` into raw `bytes`. Use this convenience property instead of manually base64-decoding:
 
 ```python
 if status.audio_bytes:
@@ -582,6 +624,8 @@ Poll until the job reaches `completed` or `failed`. Raises `MurmrError` with `co
 
 #### Sync Example
 
+Block until a job finishes, polling at regular intervals. Raises `MurmrError` with `code='JOB_FAILED'` on failure or `code='TIMEOUT'` if the deadline passes:
+
 ```python
 result = client.jobs.wait_for_completion(
     "job_xyz",
@@ -596,6 +640,8 @@ if result.audio_bytes:
 ```
 
 #### Async Example
+
+Non-blocking version that polls without blocking the event loop:
 
 ```python
 result = await client.jobs.wait_for_completion(
@@ -643,7 +689,7 @@ See [errors](./errors.md) for all error codes and retry strategies.
 
 ## Response Models
 
-All response types are immutable Pydantic v2 models (`frozen=True`).
+All response types are immutable Pydantic v2 models (`frozen=True`). Import these types for `isinstance` checks and type annotations in your code:
 
 ```python
 from murmr._types import (
@@ -687,7 +733,7 @@ Yielded by `speech.stream()` and `voices.design_stream()`.
 | `total_time_ms` | `float \| None` | Total generation time. |
 | `error` | `str \| None` | Error message, if any. |
 
-The `audio_bytes` property decodes the `audio` or `chunk` field from base64:
+The `audio_bytes` property decodes the `audio` or `chunk` field from base64 into raw PCM bytes, ready to pipe to an audio player or write to a file:
 
 ```python
 for chunk in stream:

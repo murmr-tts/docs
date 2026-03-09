@@ -32,6 +32,8 @@ Generate speech from text using a saved voice. murmr provides two speech endpoin
 
 The batch endpoint (`POST /v1/audio/speech`) returns HTTP 200 with binary audio by default. If you provide a `webhook_url`, it returns HTTP 202 with a job ID instead -- see [Async Jobs](./async-jobs.md) for polling and webhook details.
 
+Submit a batch TTS job via curl. Returns a JSON job object with an ID for polling, or binary audio directly if the server can respond synchronously:
+
 **curl**
 ```bash
 # Submit batch job
@@ -50,6 +52,8 @@ curl "https://api.murmr.dev/v1/jobs/job_a1b2c3d4e5f6g7h8" \
   -H "Authorization: Bearer $MURMR_API_KEY" \
   --output episode2.mp3
 ```
+
+Three ways to use batch generation with the Node.js SDK: synchronous (default), poll-and-wait, or async with webhook:
 
 **TypeScript**
 ```typescript
@@ -131,6 +135,8 @@ asyncio.run(main())
 
 The streaming endpoint (`POST /v1/audio/speech/stream`) returns audio chunks via SSE. First chunk latency is typically under 450ms.
 
+Stream saved-voice audio via curl. The response is an SSE `text/event-stream` with base64-encoded PCM chunks:
+
 **curl**
 ```bash
 curl -X POST "https://api.murmr.dev/v1/audio/speech/stream" \
@@ -142,6 +148,8 @@ curl -X POST "https://api.murmr.dev/v1/audio/speech/stream" \
     "voice": "voice_abc123"
   }'
 ```
+
+Stream audio from a saved voice and process each PCM chunk as it arrives. Typically ~450ms to first chunk:
 
 **TypeScript**
 ```typescript

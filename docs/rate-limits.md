@@ -50,6 +50,8 @@ Every HTTP API response includes these headers:
 | `X-RateLimit-Remaining` | Characters remaining this period | `847250` |
 | `X-RateLimit-Reset` | When the quota resets (ISO 8601) | `2026-04-01T00:00:00.000Z` |
 
+Read rate limit headers from any API response to track your monthly character usage. These headers are present on every successful response:
+
 **TypeScript**
 ```typescript
 import { MurmrClient, isSyncResponse } from '@murmr/sdk';
@@ -72,6 +74,8 @@ if (isSyncResponse(result)) {
   console.log(`Resets at: ${resetAt}`);
 }
 ```
+
+Check usage via raw HTTP headers in Python. The `X-RateLimit-Remaining` header shows characters left in your current billing period:
 
 **Python**
 ```python
@@ -100,7 +104,7 @@ print(f"Resets: {reset}")
 
 Each plan limits how many requests can be in-flight simultaneously. If you exceed the concurrent limit, the server returns `429` with concurrent limit metadata.
 
-429 response example:
+When the concurrent limit is exceeded, the API returns a 429 with `concurrent_limit_exceeded` code. Use the response headers to see how many requests are active:
 
 ```json
 {
@@ -112,7 +116,7 @@ Each plan limits how many requests can be in-flight simultaneously. If you excee
 }
 ```
 
-Headers:
+The `X-Concurrent-Limit` and `X-Concurrent-Active` headers show your plan's limit and current in-flight count:
 
 ```
 X-Concurrent-Limit: 5
@@ -131,6 +135,8 @@ The Realtime WebSocket endpoint has additional limits:
 | Max buffer size | 4,096 chars | Per connection |
 
 ## Handling 429 Errors
+
+Retry with exponential backoff when rate-limited, but do not retry monthly limit exhaustion (upgrade your plan instead):
 
 **TypeScript**
 ```typescript
@@ -159,6 +165,8 @@ async function generateWithRetry(input: string, voice: string, maxRetries = 3) {
   }
 }
 ```
+
+Same retry pattern in Python. The `e.code` field distinguishes concurrent limits (retryable) from monthly quota exhaustion (not retryable):
 
 **Python**
 ```python
@@ -196,7 +204,7 @@ with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
 
 ## Batch Processing with Concurrency Control
 
-When processing many items, respect concurrent limits:
+When processing many items, use a semaphore to stay within your plan's concurrent request limit. This prevents 429 errors and ensures smooth throughput:
 
 **Python (async)**
 ```python

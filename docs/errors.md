@@ -4,7 +4,7 @@ Complete guide to API errors, their causes, and how to resolve them. murmr uses 
 
 ## Error Response Format
 
-All errors use the structured OpenAI-compatible format:
+All errors use the structured OpenAI-compatible format. Parse the `error.type` and `error.code` fields to determine the cause programmatically:
 
 ```json
 {
@@ -17,7 +17,7 @@ All errors use the structured OpenAI-compatible format:
 }
 ```
 
-Rate limit errors (429) include additional metadata:
+Rate limit errors (429) include additional metadata showing your concurrent request limits, which helps you implement proper throttling:
 
 ```json
 {
@@ -109,6 +109,8 @@ The backend did not respond in time. Common with very long text near the 4,096 c
 
 ### TypeScript (`@murmr/sdk`)
 
+The SDK wraps all API errors in typed error classes. Use `instanceof` checks to handle different error types. `MurmrError` is the base class; `MurmrChunkError` extends it for long-form generation failures:
+
 ```typescript
 import { MurmrError, MurmrChunkError } from '@murmr/sdk';
 
@@ -131,6 +133,8 @@ class MurmrChunkError extends MurmrError {
 
 ### Python (`murmr`)
 
+Python error classes mirror the TypeScript SDK. Access error details via attributes like `.status`, `.code`, and `.message`:
+
 ```python
 from murmr import MurmrError, MurmrChunkError
 
@@ -149,6 +153,8 @@ from murmr import MurmrError, MurmrChunkError
 ```
 
 ## Error Handling Examples
+
+Handle different error types by checking `status` and `code`. This pattern covers auth failures, rate limits, and bad requests in a single try/catch:
 
 **TypeScript**
 ```typescript
@@ -174,6 +180,8 @@ try {
 }
 ```
 
+Equivalent error handling in Python. The `concurrent_active` and `concurrent_limit` fields are only populated on 429 rate limit errors:
+
 **Python**
 ```python
 import os
@@ -198,6 +206,8 @@ with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
 ## Retry Logic
 
 Implement exponential backoff for transient errors (429, 500, 502, 503, 504). Do **not** retry 400, 401, or 404 errors -- fix the request instead.
+
+Retry a streaming request with exponential backoff. Only retries on transient HTTP status codes; all other errors propagate immediately:
 
 **TypeScript**
 ```typescript
@@ -235,6 +245,8 @@ async function generateWithRetry(
   throw new Error('Unreachable');
 }
 ```
+
+Same retry pattern in Python. For 429 errors, uses a longer minimum delay (5 seconds) since rate limits need more cooldown:
 
 **Python**
 ```python

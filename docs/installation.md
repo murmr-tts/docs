@@ -16,6 +16,8 @@ export MURMR_API_KEY="murmr_sk_live_your_key_here"
 
 ### Verify with curl
 
+Test your API key by generating a short audio clip. If you hear audio, your key is working:
+
 ```bash
 curl -X POST https://api.murmr.dev/v1/voices/design \
   -H "Authorization: Bearer $MURMR_API_KEY" \
@@ -82,6 +84,8 @@ const client = new MurmrClient({
 | `timeout` | `number` | `300000` | Request timeout in milliseconds (5 min default). |
 
 ### Verify It Works
+
+Generate a short audio clip to confirm the SDK is configured correctly:
 
 ```typescript
 import { MurmrClient } from '@murmr/sdk';
@@ -173,6 +177,8 @@ async with AsyncMurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
 
 ### Verify It Works
 
+Generate a test audio file to confirm the Python SDK is working:
+
 ```python
 import os
 from murmr import MurmrClient
@@ -204,7 +210,7 @@ See the full [Python SDK Reference](./sdk-reference-python.md) for all methods a
 
 ## OpenAI Compatibility
 
-murmr is a drop-in replacement for OpenAI's TTS API. Change the base URL and API key to migrate:
+murmr is a drop-in replacement for OpenAI's TTS API. Change the base URL and API key to migrate. The `model` parameter is required by the OpenAI SDK but ignored by murmr:
 
 **Node.js (OpenAI SDK):**
 

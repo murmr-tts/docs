@@ -19,6 +19,8 @@ Submit batch TTS jobs, poll for results, and receive webhook notifications when 
 
 ## Submitting a Job
 
+Submit a batch TTS job. Without `webhook_url`, the API returns synchronous audio (HTTP 200). With `webhook_url`, it returns a job ID (HTTP 202) for async processing:
+
 **curl**
 ```bash
 curl -X POST "https://api.murmr.dev/v1/audio/speech" \
@@ -32,6 +34,8 @@ curl -X POST "https://api.murmr.dev/v1/audio/speech" \
 # Returns 202:
 # {"id": "job_a1b2c3d4e5f6g7h8", "status": "queued", "created_at": "..."}
 ```
+
+Submit a job with `webhook_url` to receive results asynchronously. Use `isAsyncResponse()` to type-narrow the result:
 
 **TypeScript**
 ```typescript
@@ -73,6 +77,8 @@ with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
 
 `GET /v1/jobs/{jobId}` returns the current job status. When the job is completed, it returns binary audio directly.
 
+Poll for a job's status with curl. Completed jobs return binary audio directly; in-progress jobs return JSON with status:
+
 **curl**
 ```bash
 # Poll for status
@@ -84,6 +90,8 @@ curl -s "https://api.murmr.dev/v1/jobs/$JOB_ID" \
 # When failed: returns JSON with error
 # When expired: returns 410 Gone
 ```
+
+Three polling strategies in TypeScript: manual single poll, automatic wait-for-completion, or the all-in-one `createAndWait`:
 
 **TypeScript**
 ```typescript
@@ -199,6 +207,8 @@ Add `webhook_url` to your request to receive the audio via POST when the job com
 
 ### Success Payload
 
+When the job completes, your webhook receives a POST with base64-encoded audio and metadata:
+
 ```json
 {
   "id": "job_a1b2c3d4e5f6g7h8",
@@ -213,6 +223,8 @@ Add `webhook_url` to your request to receive the audio via POST when the job com
 
 ### Failure Payload
 
+If the job fails, the webhook payload includes the error message. Check `status === "failed"` and read the `error` field:
+
 ```json
 {
   "id": "job_a1b2c3d4e5f6g7h8",
@@ -222,6 +234,8 @@ Add `webhook_url` to your request to receive the audio via POST when the job com
 ```
 
 ### Webhook Handler
+
+Receive webhook deliveries in your backend. Decode the base64 audio and save it. Set a large JSON body limit (50MB+) since audio payloads can be substantial:
 
 **TypeScript (Express)**
 ```typescript
@@ -246,6 +260,8 @@ app.post('/webhooks/tts', async (req, res) => {
   res.sendStatus(200);
 });
 ```
+
+Same webhook handler in Python using Flask. Decode the base64 audio payload and write it to disk:
 
 **Python (Flask)**
 ```python

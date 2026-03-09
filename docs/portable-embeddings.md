@@ -78,7 +78,7 @@ asyncio.run(main())
 
 ### 2. Store in your database
 
-The embedding is a base64 string. Store it in any database alongside your user data.
+The embedding is a base64 string (~50-200KB). Store it in any database alongside your user data. Here is an example Postgres schema for a multi-tenant voice table:
 
 ```sql
 CREATE TABLE voices (
@@ -94,6 +94,8 @@ CREATE TABLE voices (
 
 Pass the embedding inline via `voice_clone_prompt`. No voice ID needed -- the voice identity travels with the request.
 
+Pass the stored embedding as `voice_clone_prompt` in any TTS request. No saved voice ID is needed -- the voice identity travels inline with the request:
+
 **curl**
 ```bash
 curl -X POST "https://api.murmr.dev/v1/audio/speech/stream" \
@@ -105,6 +107,8 @@ curl -X POST "https://api.murmr.dev/v1/audio/speech/stream" \
     "language": "English"
   }'
 ```
+
+Retrieve the embedding from your database and pass it inline. The `voice` parameter is required but overridden by `voice_clone_prompt`:
 
 **TypeScript**
 ```typescript

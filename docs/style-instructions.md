@@ -6,6 +6,8 @@ Control how voices deliver your content using natural language descriptions. Wit
 
 Style control happens through the `voice_description` parameter in VoiceDesign. Write what you want the voice to sound like -- including personality, emotion, pace, and delivery -- and the model will adjust accordingly.
 
+Generate audio with style instructions by embedding emotion, pace, and delivery cues in the `voice_description` field:
+
 **curl**
 ```bash
 curl -X POST "https://api.murmr.dev/v1/voices/design" \
@@ -17,6 +19,8 @@ curl -X POST "https://api.murmr.dev/v1/voices/design" \
     "language": "English"
   }' --output welcome.wav
 ```
+
+Same request using the Node.js SDK. The `voice_description` controls both voice identity and delivery style:
 
 **TypeScript**
 ```typescript
@@ -110,7 +114,7 @@ These `voice_description` values combine character and style for common use case
 
 ## Save and Reuse Voices
 
-Once you find a voice description that captures the right style, save it as a reusable voice for production:
+Once you find a voice description that captures the right style, save it for consistent production use. The saved voice preserves the style from your description, so every generation with that voice ID has the same character and delivery:
 
 **TypeScript**
 ```typescript
