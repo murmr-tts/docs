@@ -242,14 +242,18 @@ Once saved, use the voice ID in any speech request. Every call with the same voi
 **TypeScript**
 
 ```typescript
+import { MurmrClient, isSyncResponse } from '@murmr/sdk';
 import { writeFileSync } from 'fs';
 
-const result = await client.speech.createAndWait({
+const result = await client.speech.create({
   input: "This is my saved voice. It sounds the same every time.",
   voice: "voice_abc123", // Your saved voice ID
+  response_format: "mp3",
 });
 
-writeFileSync("output.wav", Buffer.from(result.audio_base64!, "base64"));
+if (isSyncResponse(result)) {
+  writeFileSync("output.mp3", Buffer.from(await result.arrayBuffer()));
+}
 ```
 
 **cURL**
@@ -260,9 +264,10 @@ curl -X POST "https://api.murmr.dev/v1/audio/speech" \
   -H "Content-Type: application/json" \
   -d '{
     "input": "This is my saved voice. It sounds the same every time.",
-    "voice": "voice_abc123"
+    "voice": "voice_abc123",
+    "response_format": "mp3"
   }' \
-  --output output.wav
+  --output output.mp3
 ```
 
 ## Next Steps
