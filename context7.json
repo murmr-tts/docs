@@ -1,4 +1,6 @@
 {
+  "url": "https://context7.com/murmr-tts/docs",
+  "public_key": "pk_z1Tp1jPJa52SXtNppRI9r",
   "projectTitle": "murmr",
   "description": "murmr Text-to-Speech API — create any voice with natural language descriptions. OpenAI-compatible. SDKs for Node.js (@murmr/sdk) and Python (murmr). Supports streaming (SSE), real-time WebSocket, batch processing, voice cloning, and 10 languages.",
   "folders": ["docs"],
