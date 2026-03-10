@@ -9,14 +9,14 @@ Create any voice by describing it in natural language. Generate speech with cust
 
 `POST /v1/voices/design`
 
-SSE streaming — low-latency audio chunks
+Sync binary audio — returns complete audio file with `response_format` support (mp3 default)
 
 `POST /v1/voices/design/stream`
 
-SSE streaming — alias for the above
+SSE streaming — low-latency PCM audio chunks
 
-> **ℹ️ Both endpoints stream**
-> Both `/v1/voices/design` and `/v1/voices/design/stream` return Server-Sent Events with PCM audio chunks. The `/stream` suffix is optional — it exists for consistency with the Saved Voices API which has separate batch and streaming endpoints.
+> **ℹ️ Two modes**
+> `/v1/voices/design` returns `200` with binary audio (mp3 default). `/v1/voices/design/stream` returns Server-Sent Events with PCM audio chunks for low-latency playback. Both accept the same JSON request body.
 
 ## Request Parameters
 
@@ -29,14 +29,66 @@ Send a JSON body with the following parameters:
 | `language` | string | No | Auto | Output language: English, Spanish, Portuguese, German, French, Italian, Chinese, Japanese, Korean, Russian, or "Auto" (detect from text) |
 | `input` | string | No | -- | Alias for text (OpenAI API compatibility). If both text and input are provided, text takes precedence. |
 
-## Streaming Request
+## Sync Request (Binary Audio)
 
-VoiceDesign always streams audio as Server-Sent Events. Audio chunks arrive progressively for low-latency playback.
+`/v1/voices/design` returns a complete audio file. Default format is mp3. Use this when you want the full file without handling SSE chunks.
 
 **cURL**
 
 ```curl
 curl -X POST "https://api.murmr.dev/v1/voices/design" \
+  -H "Authorization: Bearer $MURMR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Bienvenue dans notre podcast. Explorons ensemble le futur de l\'IA.",
+    "voice_description": "A French female narrator with a Parisian accent, warm and articulate",
+    "language": "French"
+  }' --output french_narrator.mp3
+```
+
+**Node.js SDK**
+
+```typescript
+import { MurmrClient } from '@murmr/sdk';
+import { writeFileSync } from 'fs';
+
+const client = new MurmrClient({ apiKey: process.env.MURMR_API_KEY! });
+
+// design() streams internally and returns a complete WAV buffer
+const wav = await client.voices.design({
+  input: "Bienvenue dans notre podcast.",
+  voice_description: "A French female narrator with a Parisian accent, warm and articulate",
+  language: "French",
+});
+
+writeFileSync("french_narrator.wav", wav);
+```
+
+**Python SDK**
+
+```python
+import os
+from murmr import MurmrClient
+
+with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
+    wav = client.voices.design(
+        input="Bienvenue dans notre podcast.",
+        voice_description="A French female narrator with a Parisian accent, warm and articulate",
+        language="French",
+    )
+
+    with open("french_narrator.wav", "wb") as f:
+        f.write(wav)
+```
+
+## Streaming Request (SSE)
+
+`/v1/voices/design/stream` returns audio chunks via Server-Sent Events for low-latency playback (~450ms to first chunk).
+
+**cURL**
+
+```curl
+curl -X POST "https://api.murmr.dev/v1/voices/design/stream" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
