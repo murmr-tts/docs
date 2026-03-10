@@ -4,13 +4,13 @@ murmr supports six audio output formats via the `response_format` parameter. All
 
 ## Supported Formats
 
-Set `response_format` in your request body. Defaults to `wav`.
+Set `response_format` in your request body. Defaults to `mp3` (via Worker; `wav` on pod direct).
 
 | Format | Codec | Bitrate | Content-Type | Best For |
 | --- | --- | --- | --- | --- |
-| wav | — | Lossless | audio/wav | Default, highest quality, editing |
+| wav | — | Lossless | audio/wav | Highest quality, editing |
 | pcm | — | Raw | audio/pcm | Direct playback, real-time pipelines |
-| mp3 | libmp3lame | 128k | audio/mpeg | Downloads, broadest compatibility |
+| mp3 | libmp3lame | 128k | audio/mpeg | Default, downloads, broadest compatibility |
 | opus | libopus | 64k | audio/opus | Low bandwidth, WebRTC, voice agents |
 | aac | aac | 64k | audio/aac | iOS/Safari, mobile apps |
 | flac | flac | Lossless | audio/flac | Archival, lossless compression |
@@ -31,8 +31,8 @@ curl -X POST "https://api.murmr.dev/v1/audio/speech" \
     "text": "Hello, world!",
     "voice": "voice_abc123",
     "response_format": "mp3"
-  }'
-# Returns 202 with job ID — poll GET /v1/jobs/{jobId} for audio
+  }' --output output.mp3
+# Returns 200 with binary audio (mp3 default)
 ```
 
 **Python**
@@ -40,7 +40,6 @@ curl -X POST "https://api.murmr.dev/v1/audio/speech" \
 ```python
 import requests
 
-# Submit batch job with format
 response = requests.post(
     "https://api.murmr.dev/v1/audio/speech",
     headers={"Authorization": "Bearer YOUR_API_KEY"},
@@ -51,8 +50,9 @@ response = requests.post(
     }
 )
 
-job = response.json()
-# Poll GET /v1/jobs/{job['id']} — returns audio/mpeg when complete
+# response.content contains binary audio (audio/mpeg)
+with open("output.mp3", "wb") as f:
+    f.write(response.content)
 ```
 
 **JavaScript**
@@ -71,8 +71,8 @@ const response = await fetch("https://api.murmr.dev/v1/audio/speech", {
   })
 });
 
-const job = await response.json();
-// Poll GET /v1/jobs/{job.id} — returns audio blob when complete
+// response.body contains binary audio (audio/mpeg)
+const blob = await response.blob();
 ```
 
 ## Native Audio Specifications

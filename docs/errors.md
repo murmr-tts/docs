@@ -265,7 +265,7 @@ Saved voice IDs must be exactly as returned from the API (e.g., voice_abc123). F
 
 Request timing out?
 
-Set your HTTP client timeout to at least 60 seconds. For the batch endpoint, note that it always returns 202 immediately — the actual generation happens asynchronously.
+Set your HTTP client timeout to at least 60 seconds. `/v1/audio/speech` returns `200` with binary audio by default (sync). With `webhook_url`, it returns `202` for async processing.
 
 ## WebSocket Close Codes
 

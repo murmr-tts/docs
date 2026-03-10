@@ -266,6 +266,29 @@ await client.voices.delete("voice_abc123def456");
 > **ℹ️ Voice limits by plan**
 > Free: 3 • Starter: 10 • Pro: 25 • Realtime: 50 • Scale: 100. See [Pricing](./pricing.md).
 
+### client.voices.extractEmbeddings()
+
+Extract portable voice embeddings from audio. Store the returned `prompt_data` in your own database and pass it via `voice_clone_prompt` in any TTS request. See [Portable Embeddings](./portable-embeddings.md).
+
+```typescript
+const { prompt_data, prompt_size_bytes } = await client.voices.extractEmbeddings({
+  audio: wavBuffer,
+  ref_text: "Transcript of the reference audio.",
+});
+
+// Use the embedding in a TTS request
+const stream = await client.speech.stream({
+  input: "Hello from a portable voice!",
+  voice: "inline",
+  voice_clone_prompt: prompt_data,
+});
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `audio` | Buffer | Uint8Array | Yes | WAV audio to extract embeddings from. |
+| `ref_text` | string | Yes | Transcript of the reference audio (improves extraction quality). |
+
 ## Async Jobs
 
 `speech.create()` always returns a job ID. Use these methods to poll for completion, or pass a `webhook_url` for async delivery.

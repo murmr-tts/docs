@@ -32,7 +32,7 @@ Send a JSON body with the following parameters:
 | `voice` | string | No | -- | Saved voice ID (e.g., "voice_abc123"). The API resolves this to the stored voice embeddings automatically. Either voice or voice_clone_prompt is required. |
 | `voice_clone_prompt` | string | No | -- | Base64-encoded voice embedding data. Optional — only needed if you store and manage embeddings yourself. Most users should use voice instead. |
 | `language` | string | No | Auto | Output language: English, Spanish, Portuguese, German, French, Italian, Chinese, Japanese, Korean, Russian, or "Auto" |
-| `response_format` | string | No | wav | Audio format (batch endpoint only): mp3, opus, aac, flac, wav (default), or pcm. See Audio Formats. |
+| `response_format` | string | No | mp3 | Audio format: mp3 (default), opus, aac, flac, wav, or pcm. See Audio Formats. |
 | `webhook_url` | string | No | -- | HTTPS URL for async delivery (batch endpoint only). When provided, completed audio is POSTed to this URL. See Async Jobs. |
 | `input` | string | No | -- | Alias for text (OpenAI API compatibility). If both are provided, text takes precedence. |
 

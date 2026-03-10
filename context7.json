@@ -6,7 +6,7 @@
     "Use the @murmr/sdk (Node.js) or murmr (Python) SDK instead of raw HTTP requests — they handle auth, streaming, error recovery, and long-form chunking automatically",
     "Store API keys in environment variables (MURMR_API_KEY), never hardcode them",
     "For text longer than 4096 characters, use createLongForm() (Node.js) or create_long_form() (Python) — do NOT manually split text",
-    "Batch endpoints (/v1/audio/speech, /v1/voices/design without /stream) return HTTP 202 with a job ID when webhook_url is provided — poll with GET /v1/jobs/{id} or use createAndWait()/create_and_wait()",
+    "Batch endpoints (/v1/audio/speech, /v1/voices/design) return HTTP 200 with binary audio by default (mp3). With webhook_url, they return HTTP 202 with a job ID — poll with GET /v1/jobs/{id} or use createAndWait()/create_and_wait()",
     "For real-time voice agents, use WebSocket (wss://api.murmr.dev/v1/realtime) not SSE streaming — WebSocket supports bidirectional text buffering and interruption",
     "murmr is a drop-in replacement for OpenAI's TTS API — change the base URL and API key to migrate",
     "Voice descriptions (voice_description parameter) create unique voices from natural language — no audio samples needed",

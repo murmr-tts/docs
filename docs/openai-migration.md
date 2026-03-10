@@ -81,12 +81,12 @@ Unlike OpenAI's fixed voices, murmr uses **VoiceDesign** — describe any voice 
 
 - **Extra — WebSocket real-time:** WebSocket API for voice agents and LLM integration. See [Real-time docs](./realtime.md).
 
-- **Different — Batch is async:** The batch endpoint (`/v1/audio/speech`) returns `202` with a job ID. Poll `GET /v1/jobs/{jobId}` to retrieve the audio when ready. This endpoint is optimized for bulk generation and file exports — for low-latency playback, use [`/v1/audio/speech/stream`](./streaming.md) instead (~450ms to first audio).
+- **Same — Sync batch:** `/v1/audio/speech` returns `200` with binary audio by default — same as OpenAI. For async processing, pass `webhook_url` to get a `202` with a job ID. For low-latency streaming, use [`/v1/audio/speech/stream`](./streaming.md) (~450ms to first audio).
 
 - **Different — Language parameter:** murmr adds a `language` parameter using full names (`"English"`, `"French"`, `"Japanese"`). Defaults to `"Auto"` for automatic detection. See [Language Support](./languages.md).
 
-> **⚠️ OpenAI SDK Compatibility**
-> The OpenAI SDK's `client.audio.speech.create()` targets `/v1/audio/speech`, which is murmr's async batch endpoint (returns `202` JSON, not audio). For direct SDK compatibility, use the [VoiceDesign](./voicedesign.md) or [Streaming](./streaming.md) endpoints instead, or use the REST API directly as shown below.
+> **ℹ️ OpenAI SDK Compatibility**
+> `/v1/audio/speech` now returns `200` with binary audio by default — the OpenAI SDK's `client.audio.speech.create()` works as a drop-in (with a saved voice ID as the `voice` parameter).
 
 ## After: murmr with Saved Voice
 
@@ -150,7 +150,7 @@ with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
 **cURL**
 
 ```curl
-# Submit job (returns 202 with job ID)
+# Returns 200 with binary audio
 curl -X POST "https://api.murmr.dev/v1/audio/speech" \
   -H "Authorization: Bearer YOUR_MURMR_KEY" \
   -H "Content-Type: application/json" \
@@ -158,11 +158,7 @@ curl -X POST "https://api.murmr.dev/v1/audio/speech" \
     "text": "Hello!",
     "voice": "voice_abc123",
     "response_format": "mp3"
-  }'
-
-# Poll for result
-curl "https://api.murmr.dev/v1/jobs/job_abc123" \
-  -H "Authorization: Bearer YOUR_MURMR_KEY" --output hello.mp3
+  }' --output hello.mp3
 ```
 
 **Node.js SDK**

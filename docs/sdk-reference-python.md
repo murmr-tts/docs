@@ -248,6 +248,31 @@ async with client.voices.design_stream(
             break
 ```
 
+## client.voices.extract_embeddings()
+
+Extract portable voice embeddings from audio. Store the returned `prompt_data` in your own database and pass it via `voice_clone_prompt` in any TTS request. See [Portable Embeddings](./portable-embeddings.md).
+
+```python
+result = client.voices.extract_embeddings(
+    audio=open("reference.wav", "rb").read(),
+    ref_text="Transcript of the reference audio.",
+)
+
+# Use the embedding in a TTS request
+with client.speech.stream(
+    input="Hello from a portable voice!",
+    voice="inline",
+    voice_clone_prompt=result.prompt_data,
+) as stream:
+    for chunk in stream:
+        pcm = chunk.audio_bytes
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `audio` | bytes | Yes | WAV audio to extract embeddings from. |
+| `ref_text` | str | Yes | Transcript of the reference audio (improves extraction quality). |
+
 ## Async Jobs
 
 `speech.create()` always returns a job ID. Use these methods to poll for completion, or pass a `webhook_url` for async delivery.

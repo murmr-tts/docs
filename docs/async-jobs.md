@@ -2,8 +2,8 @@
 
 All batch TTS requests are processed asynchronously. Submit a job, get a job ID, then poll for the audio result or receive it via webhook.
 
-> **ℹ️ Always Async**
-> The batch endpoint `POST /v1/audio/speech` always returns `202 Accepted` with a job ID — it never returns audio directly. Use `GET /v1/jobs/{jobId}` to retrieve the audio when the job completes. For real-time playback, use the [streaming endpoint](./speech.md) instead.
+> **ℹ️ When to Use Async**
+> `POST /v1/audio/speech` returns `200` with binary audio by default (sync). When you provide a `webhook_url` parameter, it returns `202 Accepted` with a job ID for async processing. Use `GET /v1/jobs/{jobId}` to poll, or wait for the webhook callback.
 
 ## How It Works
 
@@ -11,7 +11,7 @@ All batch TTS requests are processed asynchronously. Submit a job, get a job ID,
 
 Submit a batch request
 
-`POST /v1/audio/speech` returns `202` immediately with a job ID like `job_a1b2c3d4e5f6g7h8`.
+`POST /v1/audio/speech` with a `webhook_url` parameter returns `202` immediately with a job ID like `job_a1b2c3d4e5f6g7h8`. Without `webhook_url`, it returns `200` with binary audio (sync).
 
 2
 
