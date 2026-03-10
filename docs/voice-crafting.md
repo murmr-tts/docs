@@ -104,6 +104,94 @@ All claims in this guide are backed by official Qwen3-TTS documentation:
 - [GitHub Repository](https://github.com/QwenLM/Qwen3-TTS) — Official examples, API documentation
 - [HuggingFace Model Card](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign) — Supported languages, model specifications
 
+## Handling Ambiguous Descriptions
+
+VoiceDesign is generative — the same description can produce slightly different voices each time. When building production apps, implement validation and fallback strategies to handle cases where a `voice_description` produces an unsatisfactory result.
+
+### Validation Strategy
+
+There is no way to pre-validate whether a description will produce a "good" voice — quality is subjective. Instead, use a generate-and-test approach:
+
+- Generate a short test phrase (5-10 words) before committing to long content
+- Let users preview and approve before saving a voice
+- If the result is unsatisfactory, regenerate — the model is non-deterministic, so a second attempt often produces a better match
+
+### Fallback Patterns
+
+```typescript
+import { MurmrClient, isSyncResponse, MurmrError } from '@murmr/sdk';
+
+// Strategy 1: Retry with the same description (non-deterministic output)
+async function designWithRetry(
+  client: MurmrClient,
+  description: string,
+  maxAttempts = 3,
+) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await client.voices.design({
+        input: "Testing this voice.",
+        voice_description: description,
+      });
+    } catch (error) {
+      if (attempt === maxAttempts) throw error;
+      // Wait before retry (server may be under load)
+      await new Promise((r) => setTimeout(r, 1000 * attempt));
+    }
+  }
+}
+
+// Strategy 2: Fall back to a saved voice if VoiceDesign fails
+async function generateSpeech(
+  client: MurmrClient,
+  text: string,
+  description: string,
+  fallbackVoiceId: string,
+) {
+  try {
+    // Try VoiceDesign first
+    return await client.voices.design({ input: text, voice_description: description });
+  } catch (error) {
+    // Fall back to a known-good saved voice
+    const result = await client.speech.create({
+      input: text,
+      voice: fallbackVoiceId,
+      response_format: "mp3",
+    });
+    if (isSyncResponse(result)) {
+      return Buffer.from(await result.arrayBuffer());
+    }
+    throw new Error("Fallback voice also failed");
+  }
+}
+
+// Strategy 3: Refine vague descriptions programmatically
+function refineDescription(userInput: string): string {
+  const defaults = [];
+  if (!/male|female|woman|man/i.test(userInput)) {
+    defaults.push("female");
+  }
+  if (!/age|young|old|adult/i.test(userInput)) {
+    defaults.push("adult");
+  }
+  if (!/accent|american|british/i.test(userInput)) {
+    defaults.push("neutral American accent");
+  }
+  return defaults.length > 0
+    ? `${userInput}, ${defaults.join(", ")}`
+    : userInput;
+}
+```
+
+### Common Pitfalls
+
+| Description | Problem | Fix |
+| --- | --- | --- |
+| "A nice voice" | Too vague — model has too much freedom | "A warm, friendly female voice, mid-30s, American accent" |
+| "Morgan Freeman" | Celebrity names are ignored (not trained on specific people) | Describe the qualities: "A deep, authoritative male voice with a calm, narrating tone" |
+| "Whisper quietly" | Mixing style with identity — use instruct for delivery | Description: "A soft female voice" + instruct: "Speak in a gentle whisper" |
+| "Fast energetic voice" | Speed/energy are delivery traits, not voice identity | Description: "A bright, youthful voice" + instruct: "Speak quickly with high energy" |
+
 ## See Also
 
 - [VoiceDesign API](./voicedesign.md) — Complete API reference
