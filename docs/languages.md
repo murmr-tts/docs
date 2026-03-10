@@ -57,6 +57,51 @@ You can describe a voice in one language and generate speech in another. The voi
 > **ℹ️ Voice Description + Language**
 > The `voice_description` controls the speaker's character (age, gender, emotion, delivery) while the `language` parameter controls the output language. See the [Voice Crafting Guide](./voice-crafting.md) for effective description patterns.
 
+## Accents and Regional Variations
+
+The `language` parameter controls pronunciation and phonetics. The `voice_description` parameter controls the speaker's character (age, gender, emotion, delivery style) but **does not control accent or regional variation**.
+
+> **⚠️ Accents are not controllable**
+> Descriptions like "British accent", "Parisian accent", or "Southern drawl" are ignored by the model. The model was not trained on accent-specific data. To control the output language and its phonetics, use the `language` parameter.
+
+### Language-Specific Tips
+
+#### French
+
+- ✓ Set `language: "French"` explicitly — auto-detection may confuse short French phrases with other Romance languages
+- ✓ Focus `voice_description` on vocal qualities: "A warm, articulate female narrator, mid-30s, smooth and professional"
+- ✗ Do not request accents like "Parisian" or "Québécois" — these are ignored. Use `language: "French"` and let the model handle pronunciation
+- ✓ French liaison and elision are handled automatically when `language: "French"` is set
+
+#### Spanish
+
+- ✓ Set `language: "Spanish"` — covers both Castilian and Latin American phonetics
+- ✗ Cannot distinguish between regional Spanish varieties (e.g., Mexican vs. Argentinian) via voice description
+
+#### Chinese
+
+- ✓ Supports Mandarin (Simplified and Traditional). Voice descriptions can be written in Chinese for best results
+- ✓ Chinese descriptions score slightly higher on attribute perception benchmarks (82-85% APS)
+
+#### English
+
+- ✓ Best-supported language for voice descriptions — most examples in official documentation are in English
+- ✗ Cannot distinguish between regional English varieties (US, UK, Australian) via voice description
+
+### Complete French Example
+
+Creating a French narrator voice — focus on vocal qualities, not accent:
+
+```JSON
+{
+  "text": "Bienvenue dans notre podcast. Explorons ensemble le futur de l'intelligence artificielle.",
+  "voice_description": "A warm, articulate female narrator, mid-30s, smooth and professional",
+  "language": "French"
+}
+```
+
+The `language: "French"` parameter ensures French phonetics (liaison, nasal vowels, uvular R). The `voice_description` controls the speaker's character — warm tone, professional delivery, mid-30s age range.
+
 ## Best Practices
 
 Set language explicitly for production

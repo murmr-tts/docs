@@ -174,8 +174,8 @@ function refineDescription(userInput: string): string {
   if (!/age|young|old|adult/i.test(userInput)) {
     defaults.push("adult");
   }
-  if (!/accent|american|british/i.test(userInput)) {
-    defaults.push("neutral American accent");
+  if (!/tone|warm|bright|clear/i.test(userInput)) {
+    defaults.push("warm tone");
   }
   return defaults.length > 0
     ? `${userInput}, ${defaults.join(", ")}`
@@ -187,7 +187,7 @@ function refineDescription(userInput: string): string {
 
 | Description | Problem | Fix |
 | --- | --- | --- |
-| "A nice voice" | Too vague — model has too much freedom | "A warm, friendly female voice, mid-30s, American accent" |
+| "A nice voice" | Too vague — model has too much freedom | "A warm, friendly female voice, mid-30s, gentle tone" |
 | "Morgan Freeman" | Celebrity names are ignored (not trained on specific people) | Describe the qualities: "A deep, authoritative male voice with a calm, narrating tone" |
 | "Whisper quietly" | Mixing style with identity — use instruct for delivery | Description: "A soft female voice" + instruct: "Speak in a gentle whisper" |
 | "Fast energetic voice" | Speed/energy are delivery traits, not voice identity | Description: "A bright, youthful voice" + instruct: "Speak quickly with high energy" |

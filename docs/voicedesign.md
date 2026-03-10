@@ -41,7 +41,7 @@ curl -X POST "https://api.murmr.dev/v1/voices/design" \
   -H "Content-Type: application/json" \
   -d '{
     "text": "Bienvenue dans notre podcast. Explorons ensemble le futur de l\'IA.",
-    "voice_description": "A French female narrator with a Parisian accent, warm and articulate",
+    "voice_description": "A warm, articulate French female narrator, mid-30s, smooth and professional",
     "language": "French"
   }' --output french_narrator.mp3
 ```
@@ -57,7 +57,7 @@ const client = new MurmrClient({ apiKey: process.env.MURMR_API_KEY! });
 // design() streams internally and returns a complete WAV buffer
 const wav = await client.voices.design({
   input: "Bienvenue dans notre podcast.",
-  voice_description: "A French female narrator with a Parisian accent, warm and articulate",
+  voice_description: "A warm, articulate French female narrator, mid-30s, smooth and professional",
   language: "French",
 });
 
@@ -73,7 +73,7 @@ from murmr import MurmrClient
 with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
     wav = client.voices.design(
         input="Bienvenue dans notre podcast.",
-        voice_description="A French female narrator with a Parisian accent, warm and articulate",
+        voice_description="A warm, articulate French female narrator, mid-30s, smooth and professional",
         language="French",
     )
 
@@ -199,7 +199,7 @@ from murmr import MurmrClient
 with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
     wav = client.voices.design(
         input="The quick brown fox jumps over the lazy dog.",
-        voice_description="A young woman with a clear, upbeat tone and American accent",
+        voice_description="A young woman with a clear, upbeat tone and bright energy",
         language="English",
     )
 
@@ -247,6 +247,7 @@ See [SSE Streaming](./streaming.md) for complete integration guide including Web
 ### Avoid
 
 - Celebrity references — "like Morgan Freeman"
+- Accent or nationality requests — "British accent", "Parisian accent" (use the `language` parameter instead)
 - Contradictory traits — "high-pitched deep voice"
 - Overly long descriptions (>500 chars)
 
@@ -261,12 +262,12 @@ const inputText = 'This is the reference audio for my saved voice.';
 
 const wav = await client.voices.design({
   input: inputText,
-  voice_description: 'A confident male tech presenter, mid-30s, American',
+  voice_description: 'A confident male tech presenter, mid-30s, clear and energetic',
 });
 
 const saved = await client.voices.save({
   name: 'Tech Presenter',
-  description: 'Confident male, mid-30s, American, for product demos',
+  description: 'Confident male, mid-30s, clear and energetic, for product demos',
   audio: wav,
   ref_text: inputText,
   language: 'English',
@@ -279,7 +280,7 @@ console.log(`Saved as ${saved.id} — use this ID in future requests`);
 
 ```python
 text = "This is my reference audio for voice saving."
-description = "A calm, professional female voice with an American accent"
+description = "A calm, professional female voice with a warm, reassuring tone"
 
 wav = client.voices.design(
     input=text,
@@ -309,6 +310,72 @@ Saved voice limits by plan: Free (3), Starter (10), Pro (25), Realtime (50), Sca
 | 429 | Quota Exceeded | Character quota or voice design quota exceeded for this billing period |
 
 See [Error Reference](./errors.md) for all error codes.
+
+### Error Handling Example
+
+**Node.js SDK**
+
+```typescript
+import { MurmrClient, MurmrError } from '@murmr/sdk';
+
+const client = new MurmrClient({ apiKey: process.env.MURMR_API_KEY! });
+
+try {
+  const wav = await client.voices.design({
+    input: "Bienvenue dans notre podcast.",
+    voice_description: "A warm, articulate female narrator, mid-30s, smooth and professional",
+    language: "French",
+  });
+  writeFileSync("output.wav", wav);
+} catch (error) {
+  if (error instanceof MurmrError) {
+    switch (error.status) {
+      case 400:
+        console.error("Invalid request:", error.message);
+        // Check text length, description length, missing fields
+        break;
+      case 401:
+        console.error("Check your MURMR_API_KEY");
+        break;
+      case 429:
+        console.error("Quota exceeded — upgrade plan or wait for reset");
+        break;
+      default:
+        console.error(`API error ${error.status}: ${error.message}`);
+    }
+  } else {
+    console.error("Network or unexpected error:", error);
+  }
+}
+```
+
+**Python SDK**
+
+```python
+import os
+from murmr import MurmrClient, MurmrError
+
+with MurmrClient(api_key=os.environ["MURMR_API_KEY"]) as client:
+    try:
+        wav = client.voices.design(
+            input="Bienvenue dans notre podcast.",
+            voice_description="A warm, articulate female narrator, mid-30s, smooth and professional",
+            language="French",
+        )
+        with open("output.wav", "wb") as f:
+            f.write(wav)
+    except MurmrError as e:
+        if e.status == 400:
+            print(f"Invalid request: {e.message}")
+        elif e.status == 401:
+            print("Check your MURMR_API_KEY")
+        elif e.status == 429:
+            print("Quota exceeded — upgrade plan or wait for reset")
+        else:
+            print(f"API error {e.status}: {e.message}")
+    except Exception as e:
+        print(f"Network or unexpected error: {e}")
+```
 
 ## See Also
 

@@ -55,13 +55,13 @@ const client = new MurmrClient({
 const inputText = 'This is the reference recording for my new voice.';
 const wav = await client.voices.design({
   input: inputText,
-  voice_description: 'A soothing female narrator, mid-30s, neutral American accent',
+  voice_description: 'A soothing female narrator, mid-30s, warm and clear tone',
 });
 
 // Save the voice
 const saved = await client.voices.save({
   name: 'Soothing Narrator',
-  description: 'Female narrator, mid-30s, neutral American, for audiobooks',
+  description: 'Female narrator, mid-30s, warm and clear, for audiobooks',
   audio: wav,
   ref_text: inputText,
   language: 'English',
